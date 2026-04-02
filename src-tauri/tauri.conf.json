@@ -12,16 +12,28 @@
   "tauri": {
     "allowlist": {
       "all": false,
-      "dialog": { "all": true },
-      "fs": { "all": true, "scope": ["**"] },
-      "shell": { "all": true, "open": true },
-      "window": { "all": true }
+      "dialog": {
+        "all": true
+      },
+      "fs": {
+        "all": true,
+        "scope": ["**"]
+      },
+      "shell": {
+        "all": true,
+        "open": true
+      },
+      "window": {
+        "all": true
+      }
     },
     "bundle": {
       "active": true,
       "targets": "all",
       "identifier": "com.warden.ide",
-      "icon": []
+      "icon": [
+        "icons/icon.ico"
+      ]
     },
     "security": {
       "csp": null
@@ -34,7 +46,8 @@
         "title": "Warden IDE",
         "width": 1200,
         "minWidth": 800,
-        "minHeight": 600
+        "minHeight": 600,
+        "decorations": false
       }
     ]
   }

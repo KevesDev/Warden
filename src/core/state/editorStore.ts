@@ -1,43 +1,43 @@
 import { create } from 'zustand';
+import { UiVisibilityState } from '@core/contracts/UiSchema';
 
 /**
- * Interface defining the global state for the editor's workspace.
- * Strictly adheres to the Sprint 0 State Schema contract.
+ * Global state manager for the Warden IDE workspace.
+ * Manages file buffers, tab states, and layout visibility flags.
  */
-interface EditorState {
+interface EditorState extends UiVisibilityState {
     activeFilePath: string | null;
     unsavedChanges: boolean;
     openFiles: string[];
 
-    // Actions
+    // File Actions
     setActiveFile: (filePath: string) => void;
     setUnsavedChanges: (hasChanges: boolean) => void;
     openFile: (filePath: string) => void;
     closeFile: (filePath: string) => void;
+    
+    // UI Actions
+    toggleTerminal: () => void;
+    toggleWarden: () => void;
+    requestSave: () => void;
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
     activeFilePath: null,
     unsavedChanges: false,
     openFiles: [],
+    isTerminalVisible: true,
+    isWardenVisible: true,
+    saveRequestedAt: null,
 
-    /**
-     * Sets the currently active file in the Monaco Canvas.
-     */
     setActiveFile: (filePath: string) => {
         set({ activeFilePath: filePath });
     },
 
-    /**
-     * Flags whether the currently active file has unsaved modifications.
-     */
     setUnsavedChanges: (hasChanges: boolean) => {
         set({ unsavedChanges: hasChanges });
     },
 
-    /**
-     * Adds a file to the open tabs array. Sets it as active.
-     */
     openFile: (filePath: string) => {
         const currentFiles = get().openFiles;
         if (!currentFiles.includes(filePath)) {
@@ -47,10 +47,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
     },
 
-    /**
-     * Closes a file, removing it from open tabs.
-     * If the closed file was active, it attempts to set the previous tab in the array as active.
-     */
     closeFile: (filePath: string) => {
         const currentFiles = get().openFiles;
         const newFiles = currentFiles.filter(f => f !== filePath);
@@ -58,10 +54,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         let newActivePath = get().activeFilePath;
         if (newActivePath === filePath) {
             newActivePath = newFiles.length > 0 ? newFiles[newFiles.length - 1] : null;
-            // Note: The UI component must handle the "Save changes?" prompt before calling closeFile.
             set({ unsavedChanges: false }); 
         }
 
         set({ openFiles: newFiles, activeFilePath: newActivePath });
-    }
+    },
+
+    toggleTerminal: () => set((state) => ({ isTerminalVisible: !state.isTerminalVisible })),
+    toggleWarden: () => set((state) => ({ isWardenVisible: !state.isWardenVisible })),
+    
+    /**
+     * Updates the saveRequestedAt timestamp to trigger an effect within the active editor canvas.
+     */
+    requestSave: () => set({ saveRequestedAt: Date.now() }),
 }));
