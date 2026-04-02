@@ -1,9 +1,11 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useRef } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { useEditorStore } from '@core/state/editorStore';
-import { FileOpsIPC } from '@services/rust-bridge/fileOpsIpc';
-import { SystemLogger, LogLevel } from '@core/utils/systemLogger';
 import { THEME } from '@core/constants/theme';
+
+// Modular logic hooks
+import { useFileLoader } from './hooks/useFileLoader';
+import { useWardenInterceptor } from './hooks/useWardenInterceptor';
 
 const determineLanguage = (filePath: string): string => {
     const ext = filePath.split('.').pop()?.toLowerCase();
@@ -19,85 +21,25 @@ const determineLanguage = (filePath: string): string => {
 };
 
 /**
- * Main code editor instance.
- * Implements lazy-loading from disk and Warden paste analysis highlights.
+ * Decoupled Presentation Component for the core code editor.
+ * Delegates native I/O and heuristic event interception to dedicated custom hooks.
  */
 export const MonacoCanvas: React.FC = () => {
-    const { activeFilePath, fileBuffers, hydrateBuffer, updateBuffer, saveActiveFile } = useEditorStore();
-    const [isLoading, setIsLoading] = useState<boolean>(false);
+    const { activeFilePath, fileBuffers, updateBuffer, saveActiveFile } = useEditorStore();
+    
+    // Feature Hooks
+    const { isLoading } = useFileLoader();
+    const { bindWardenHeuristics } = useWardenInterceptor();
+    
     const editorRef = useRef<any>(null);
-    const decorationsRef = useRef<any>(null);
-
-    // Effect: Detect file switch and lazy-load content from disk if buffer is missing
-    useEffect(() => {
-        if (!activeFilePath) return;
-        
-        // If the buffer is already in memory, do not re-read from disk.
-        if (fileBuffers.has(activeFilePath)) return;
-
-        const loadContentFromDisk = async () => {
-            setIsLoading(true);
-            try {
-                SystemLogger.log(LogLevel.INFO, 'MonacoCanvas', `Lazy-loading content: ${activeFilePath}`);
-                const res = await FileOpsIPC.readFile(activeFilePath);
-                hydrateBuffer(activeFilePath, res.file_content);
-            } catch (err) {
-                SystemLogger.log(LogLevel.ERROR, 'MonacoCanvas', `Disk read failed: ${activeFilePath}`, err);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        loadContentFromDisk();
-    }, [activeFilePath, fileBuffers, hydrateBuffer]);
 
     const handleEditorDidMount: OnMount = (editor, monaco) => {
         editorRef.current = editor;
-        decorationsRef.current = editor.createDecorationsCollection();
 
-        // 1. Warden Core Feature: Flag pasted code blocks for analysis
-        editor.onDidPaste((e) => {
-            SystemLogger.log(LogLevel.INFO, 'WardenEngine', 'Paste event detected. Applying highlight.');
-            decorationsRef.current.append([{
-                range: e.range,
-                options: {
-                    isWholeLine: true,
-                    className: 'warden-paste-highlight',
-                    description: 'Unchecked paste block',
-                    // Prevent the highlight from spreading when the user types at the edges or presses enter
-                    stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges
-                }
-            }]);
-        });
+        // Inject the proprietary Warden background logic
+        bindWardenHeuristics(editor, monaco);
 
-        // 2. Event Listener: Clean up "ghost" highlights when text is deleted
-        editor.onDidChangeModelContent(() => {
-            try {
-                const ranges = decorationsRef.current.getRanges();
-                if (!ranges || ranges.length === 0) return;
-
-                // Filter out ranges that have been reduced to nothing (user deleted the text)
-                const validRanges = ranges.filter((r: any) => !r.isEmpty());
-
-                // If a deletion caused an empty range, reset the collection with only the valid ones
-                if (validRanges.length !== ranges.length) {
-                    decorationsRef.current.set(validRanges.map((range: any) => ({
-                        range,
-                        options: {
-                            isWholeLine: true,
-                            className: 'warden-paste-highlight',
-                            description: 'Unchecked paste block',
-                            stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges
-                        }
-                    })));
-                }
-            } catch (err) {
-                // Failsafe: Ignore transient errors during rapid typing/deletion to prevent editor crash
-                SystemLogger.log(LogLevel.ERROR, 'MonacoCanvas', 'Failed to clean up paste decorations', err);
-            }
-        });
-
-        // 3. Key Command: Map Ctrl+S to the store's saveActiveFile action
+        // Map native Save command to the global Zustand store action
         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
             saveActiveFile();
         });
@@ -122,7 +64,7 @@ export const MonacoCanvas: React.FC = () => {
             <Editor
                 height="100%"
                 theme="vs-dark"
-                path={activeFilePath} // Using path allows Monaco to handle model switching internally
+                path={activeFilePath} // Natively commands Monaco to swap the ITextModel
                 language={determineLanguage(activeFilePath)}
                 value={fileBuffers.get(activeFilePath) || ''}
                 onMount={handleEditorDidMount}

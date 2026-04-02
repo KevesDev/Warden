@@ -12,6 +12,8 @@ tauri-build = { version = "1.5", features = [] }
 tauri = { version = "1.5", features = ["dialog-all", "fs-all", "shell-all", "window-all"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+# Required for the Warden Heuristic Engine (Anti-MVP and Dependency Map)
+regex = "1.10"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

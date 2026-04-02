@@ -45,6 +45,7 @@ export const useWardenStore = create<WardenState>((set, get) => ({
 
     getCardsForFile: (filePath: string) => {
         const { activeAnalysis } = get();
+        // Only return cards if they belong to the currently viewed file
         if (activeAnalysis && activeAnalysis.target_file_path === filePath) {
             return activeAnalysis.cards;
         }
