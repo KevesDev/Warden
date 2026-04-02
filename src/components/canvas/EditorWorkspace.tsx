@@ -1,10 +1,11 @@
 import React from 'react';
 import { TabBar } from './TabBar';
 import { MonacoCanvas } from './MonacoCanvas';
-import { THEME } from '@components/layout/WorkspaceLayout';
+import { THEME } from '@core/constants/theme';
 
 /**
- * A decoupled container specifically managing the Tab UI and Monaco Editor relationship.
+ * Isolated workspace for code editing.
+ * Decoupled from the layout shell to prevent initialization loops.
  */
 export const EditorWorkspace: React.FC = () => {
     return (

@@ -1,6 +1,7 @@
 /**
- * Strict color palette definitions for the Warden retro aesthetic.
- * Decoupled here to prevent circular dependency crashes during module initialization.
+ * Centralized color palette for the Warden retro aesthetic.
+ * Decoupled into a standalone constant file to prevent circular dependency crashes 
+ * during module evaluation in the layout and canvas components.
  */
 export const THEME = {
     deepVoid: '#211832',

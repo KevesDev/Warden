@@ -1,13 +1,17 @@
 import React from 'react';
 import { FileNode } from '@core/contracts/FileTree';
 import { useFileNode } from './hooks/useFileNode';
-import { THEME } from '@core/constants/theme'; // Corrected import path
+import { THEME } from '@core/constants/theme';
 
 interface FileNodeItemProps {
     node: FileNode;
     depth: number;
 }
 
+/**
+ * Individual entry in the File Explorer tree.
+ * Correctly imports THEME from the constants directory.
+ */
 export const FileNodeItem: React.FC<FileNodeItemProps> = ({ node, depth }) => {
     const { isExpanded, isLoading, childrenNodes, isActive, handleInteraction } = useFileNode(node);
 

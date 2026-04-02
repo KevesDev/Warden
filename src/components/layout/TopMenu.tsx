@@ -5,8 +5,8 @@ import { WindowIPC } from '@services/rust-bridge/WindowIpc';
 import { FileSystemIPC } from '@services/rust-bridge/fileSystemIpc';
 
 /**
- * Custom Toolbar for Warden IDE.
- * Decoupled from native OS decorations. Only functional items are permitted.
+ * Global IDE Toolbar. 
+ * Communicates with native OS window controls and dispatches file/UI state changes.
  */
 export const TopMenu: React.FC = () => {
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
@@ -30,11 +30,17 @@ export const TopMenu: React.FC = () => {
         if (activeFilePath) requestSave();
     };
 
+    const handleCloseFile = () => {
+        setActiveMenu(null);
+        if (activeFilePath) closeFile(activeFilePath);
+    };
+
     return (
         <div style={styles.titlebar} data-tauri-drag-region>
             <div style={styles.leftSection}>
                 <div style={styles.logo} data-tauri-drag-region>W</div>
                 
+                {/* Menu: File */}
                 <div style={styles.menuItemWrapper}>
                     <button 
                         style={activeMenu === 'File' ? styles.menuButtonActive : styles.menuButton} 
@@ -45,12 +51,13 @@ export const TopMenu: React.FC = () => {
                     {activeMenu === 'File' && (
                         <div style={styles.dropdown}>
                             <div style={styles.dropdownItem} onClick={handleOpenFolder}>Open Folder</div>
-                            <div style={styles.dropdownItem} onClick={handleSaveFile}>Save File</div>
-                            <div style={styles.dropdownItem} onClick={() => { if (activeFilePath) closeFile(activeFilePath); setActiveMenu(null); }}>Close Tab</div>
+                            <div style={styles.dropdownItem} onClick={handleSaveFile}>Save Active File</div>
+                            <div style={styles.dropdownItem} onClick={handleCloseFile}>Close Active File</div>
                         </div>
                     )}
                 </div>
 
+                {/* Menu: View */}
                 <div style={styles.menuItemWrapper}>
                     <button 
                         style={activeMenu === 'View' ? styles.menuButtonActive : styles.menuButton} 
@@ -64,7 +71,7 @@ export const TopMenu: React.FC = () => {
                                 {isTerminalVisible ? 'Hide Terminal' : 'Show Terminal'}
                             </div>
                             <div style={styles.dropdownItem} onClick={() => { toggleWarden(); setActiveMenu(null); }}>
-                                {isWardenVisible ? 'Hide Warden Analysis' : 'Show Warden Analysis'}
+                                {isWardenVisible ? 'Hide Warden Sidebar' : 'Show Warden Sidebar'}
                             </div>
                         </div>
                     )}
@@ -76,6 +83,7 @@ export const TopMenu: React.FC = () => {
                 <button style={styles.controlButton} onClick={() => WindowIPC.toggleMaximize()}>&#10064;</button>
                 <button style={styles.closeButton} onClick={() => WindowIPC.close()}>&#10005;</button>
             </div>
+
             {activeMenu && <div style={styles.overlay} onClick={() => setActiveMenu(null)} />}
         </div>
     );
@@ -84,11 +92,11 @@ export const TopMenu: React.FC = () => {
 const styles = {
     titlebar: { height: '30px', backgroundColor: THEME.deepVoid, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${THEME.synthwaveViolet}`, userSelect: 'none' as const },
     leftSection: { display: 'flex', alignItems: 'center', height: '100%' },
-    logo: { color: THEME.retroPlasma, fontWeight: 'bold', padding: '0 12px', fontSize: '14px' },
+    logo: { color: THEME.retroPlasma, fontWeight: 'bold', padding: '0 12px', fontSize: '14px', cursor: 'default' },
     menuItemWrapper: { position: 'relative' as const, height: '100%' },
     menuButton: { background: 'none', border: 'none', color: THEME.textPrimary, fontSize: '12px', padding: '0 12px', cursor: 'pointer', height: '100%' },
     menuButtonActive: { background: THEME.midnightPurple, border: 'none', color: THEME.textPrimary, fontSize: '12px', padding: '0 12px', cursor: 'pointer', height: '100%' },
-    dropdown: { position: 'absolute' as const, top: '30px', left: 0, backgroundColor: THEME.midnightPurple, border: `1px solid ${THEME.synthwaveViolet}`, minWidth: '160px', zIndex: 1000, padding: '4px 0' },
+    dropdown: { position: 'absolute' as const, top: '30px', left: 0, backgroundColor: THEME.midnightPurple, border: `1px solid ${THEME.synthwaveViolet}`, minWidth: '180px', zIndex: 1000, padding: '4px 0' },
     dropdownItem: { padding: '6px 16px', fontSize: '12px', color: THEME.textPrimary, cursor: 'pointer' },
     windowControls: { display: 'flex', height: '100%' },
     controlButton: { background: 'none', border: 'none', width: '45px', height: '100%', color: THEME.textPrimary, cursor: 'pointer' },

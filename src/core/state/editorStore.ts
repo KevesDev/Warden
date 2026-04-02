@@ -3,19 +3,22 @@ import { UiVisibilityState } from '@core/contracts/UiSchema';
 import { SystemLogger, LogLevel } from '@core/utils/systemLogger';
 
 /**
- * Global state manager for the Warden IDE workspace.
- * Strictly adheres to the 'Zero Assumption' rule by tracking both file data and UI visibility.
+ * Primary state manager for the IDE workspace.
+ * Tracks file buffers, active tabs, and UI visibility flags.
+ * Includes audit logging for all critical state transitions.
  */
 interface EditorState extends UiVisibilityState {
     activeFilePath: string | null;
     unsavedChanges: boolean;
     openFiles: string[];
 
-    // Actions
+    // File Actions
     setActiveFile: (filePath: string) => void;
     setUnsavedChanges: (hasChanges: boolean) => void;
     openFile: (filePath: string) => void;
     closeFile: (filePath: string) => void;
+    
+    // UI Actions
     toggleTerminal: () => void;
     toggleWarden: () => void;
     requestSave: () => void;
@@ -30,7 +33,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     saveRequestedAt: null,
 
     setActiveFile: (filePath: string) => {
-        SystemLogger.log(LogLevel.INFO, 'EditorStore', `Active file changed to: ${filePath}`);
+        SystemLogger.log(LogLevel.INFO, 'EditorStore', `Active file target changed: ${filePath}`);
         set({ activeFilePath: filePath });
     },
 
@@ -41,7 +44,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     openFile: (filePath: string) => {
         const currentFiles = get().openFiles;
         if (!currentFiles.includes(filePath)) {
-            SystemLogger.log(LogLevel.INFO, 'EditorStore', `Adding file to workspace: ${filePath}`);
+            SystemLogger.log(LogLevel.INFO, 'EditorStore', `New file buffer opened: ${filePath}`);
             set({ openFiles: [...currentFiles, filePath], activeFilePath: filePath });
         } else {
             set({ activeFilePath: filePath });
@@ -57,24 +60,24 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             newActivePath = newFiles.length > 0 ? newFiles[newFiles.length - 1] : null;
         }
 
-        SystemLogger.log(LogLevel.INFO, 'EditorStore', `Closing file: ${filePath}`);
+        SystemLogger.log(LogLevel.INFO, 'EditorStore', `File buffer closed: ${filePath}`);
         set({ openFiles: newFiles, activeFilePath: newActivePath, unsavedChanges: false });
     },
 
     toggleTerminal: () => {
-        const nextState = !get().isTerminalVisible;
-        SystemLogger.log(LogLevel.INFO, 'EditorStore', `Terminal visibility toggled: ${nextState}`);
-        set({ isTerminalVisible: nextState });
+        const newState = !get().isTerminalVisible;
+        SystemLogger.log(LogLevel.INFO, 'EditorStore', `Terminal visibility toggled: ${newState}`);
+        set({ isTerminalVisible: newState });
     },
 
     toggleWarden: () => {
-        const nextState = !get().isWardenVisible;
-        SystemLogger.log(LogLevel.INFO, 'EditorStore', `Warden Sidebar visibility toggled: ${nextState}`);
-        set({ isWardenVisible: nextState });
+        const newState = !get().isWardenVisible;
+        SystemLogger.log(LogLevel.INFO, 'EditorStore', `Warden Sidebar visibility toggled: ${newState}`);
+        set({ isWardenVisible: newState });
     },
     
     requestSave: () => {
-        SystemLogger.log(LogLevel.INFO, 'EditorStore', 'Manual save requested via system menu.');
+        SystemLogger.log(LogLevel.INFO, 'EditorStore', 'Global Save request issued via System Menu.');
         set({ saveRequestedAt: Date.now() });
     },
 }));

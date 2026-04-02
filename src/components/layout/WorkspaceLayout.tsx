@@ -11,8 +11,8 @@ interface WorkspaceLayoutProps {
 }
 
 /**
- * Root UI shell for the Warden IDE.
- * Implements the strict 4-pane grid defined in the Product Design Document.
+ * Root UI shell for Warden IDE.
+ * Decoupled from the THEME definition to prevent circular dependency module failure.
  */
 export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
     leftSidebar,
@@ -25,13 +25,29 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({
     return (
         <div style={styles.appWrapper}>
             <TopMenu />
+            
             <div style={styles.mainContent}>
-                <aside style={styles.leftSidebar}>{leftSidebar}</aside>
+                <aside style={styles.leftSidebar}>
+                    {leftSidebar}
+                </aside>
+
                 <main style={styles.centerColumn}>
-                    <div style={styles.canvasArea}>{centerCanvas}</div>
-                    {isTerminalVisible && <div style={styles.terminalArea}>{bottomTerminal}</div>}
+                    <div style={styles.canvasArea}>
+                        {centerCanvas}
+                    </div>
+
+                    {isTerminalVisible && (
+                        <div style={styles.terminalArea}>
+                            {bottomTerminal}
+                        </div>
+                    )}
                 </main>
-                {isWardenVisible && <aside style={styles.rightSidebar}>{rightSidebar}</aside>}
+
+                {isWardenVisible && (
+                    <aside style={styles.rightSidebar}>
+                        {rightSidebar}
+                    </aside>
+                )}
             </div>
         </div>
     );
@@ -47,23 +63,39 @@ const styles = {
         overflow: 'hidden',
         fontFamily: "'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
     },
-    mainContent: { display: 'flex', flex: 1, overflow: 'hidden' },
+    mainContent: {
+        display: 'flex',
+        flexDirection: 'row' as const,
+        flex: 1,
+        overflow: 'hidden'
+    },
     leftSidebar: {
         width: '260px',
+        minWidth: '150px',
         backgroundColor: THEME.midnightPurple,
         borderRight: `1px solid ${THEME.synthwaveViolet}`,
         display: 'flex',
         flexDirection: 'column' as const,
     },
-    centerColumn: { flex: 1, display: 'flex', flexDirection: 'column' as const },
-    canvasArea: { flex: 1, backgroundColor: THEME.deepVoid, position: 'relative' as const },
+    centerColumn: {
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column' as const,
+    },
+    canvasArea: {
+        flex: 1,
+        backgroundColor: THEME.deepVoid,
+        position: 'relative' as const,
+    },
     terminalArea: {
         height: '280px',
+        minHeight: '100px',
         backgroundColor: THEME.midnightPurple,
         borderTop: `1px solid ${THEME.synthwaveViolet}`,
     },
     rightSidebar: {
         width: '320px',
+        minWidth: '200px',
         backgroundColor: THEME.midnightPurple,
         borderLeft: `1px solid ${THEME.synthwaveViolet}`,
         display: 'flex',
