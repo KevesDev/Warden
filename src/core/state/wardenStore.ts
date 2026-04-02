@@ -4,18 +4,27 @@ import { SystemLogger, LogLevel } from '@core/utils/systemLogger';
 
 /**
  * Global state manager dedicated to the Warden Engine.
- * Decoupled from the editor buffer to prevent background heuristics
- * from causing UI stutters in the main canvas.
+ * Manages both the analysis results and the active AI streaming buffer.
  */
 interface WardenState {
-    // Current heuristic results
+    // Analysis results
     activeAnalysis: WardenAnalysisResult | null;
     isAnalyzing: boolean;
+    
+    // AI Streaming State (Sprint 4 Phase 3)
+    isStreaming: boolean;
+    streamingBuffer: string; // The "accumulated" text from the current stream
+    latestChunk: string | null; // The most recent token received
     
     // Actions
     setAnalyzingState: (isAnalyzing: boolean) => void;
     setAnalysisResult: (result: WardenAnalysisResult) => void;
     clearAnalysis: () => void;
+    
+    // Streaming Actions
+    startStream: () => void;
+    appendStreamChunk: (chunk: string) => void;
+    endStream: () => void;
     
     // Quick getters
     getCardsForFile: (filePath: string) => LinterCard[];
@@ -24,6 +33,9 @@ interface WardenState {
 export const useWardenStore = create<WardenState>((set, get) => ({
     activeAnalysis: null,
     isAnalyzing: false,
+    isStreaming: false,
+    streamingBuffer: '',
+    latestChunk: null,
 
     setAnalyzingState: (isAnalyzing: boolean) => {
         set({ isAnalyzing });
@@ -33,19 +45,34 @@ export const useWardenStore = create<WardenState>((set, get) => ({
         SystemLogger.log(
             LogLevel.INFO, 
             'WardenStore', 
-            `Analysis completed for ${result.target_file_path}. Found ${result.cards.length} issues in ${result.execution_time_ms}ms.`
+            `Analysis completed for ${result.target_file_path}. Found ${result.cards.length} issues.`
         );
         set({ activeAnalysis: result, isAnalyzing: false });
     },
 
     clearAnalysis: () => {
-        SystemLogger.log(LogLevel.INFO, 'WardenStore', 'Cleared active analysis results.');
         set({ activeAnalysis: null, isAnalyzing: false });
+    },
+
+    startStream: () => {
+        SystemLogger.log(LogLevel.INFO, 'WardenStore', 'AI Streaming started.');
+        set({ isStreaming: true, streamingBuffer: '', latestChunk: null });
+    },
+
+    appendStreamChunk: (chunk: string) => {
+        set((state) => ({
+            streamingBuffer: state.streamingBuffer + chunk,
+            latestChunk: chunk
+        }));
+    },
+
+    endStream: () => {
+        SystemLogger.log(LogLevel.INFO, 'WardenStore', 'AI Streaming completed.');
+        set({ isStreaming: false, latestChunk: null });
     },
 
     getCardsForFile: (filePath: string) => {
         const { activeAnalysis } = get();
-        // Only return cards if they belong to the currently viewed file
         if (activeAnalysis && activeAnalysis.target_file_path === filePath) {
             return activeAnalysis.cards;
         }

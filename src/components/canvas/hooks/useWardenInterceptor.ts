@@ -1,47 +1,114 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import { SystemLogger, LogLevel } from '@core/utils/systemLogger';
 import { WardenIPC } from '@services/rust-bridge/wardenIpc';
 import { useEditorStore } from '@core/state/editorStore';
+import { useWardenStore } from '@core/state/wardenStore';
 
 /**
  * Custom hook encapsulating the Warden Heuristic Engine's frontend logic.
- * Manages Monaco decoration caching across tabs and triggers the Rust AST/Linter backend.
+ * Manages Monaco decoration caching and triggers the Rust AST/Linter backend.
+ * * ARCHITECTURAL DESIGN:
+ * Uses 'Ref' escape hatches for activePath and monacoInstance to bridge
+ * React's declarative state with Monaco's imperative listeners. This prevents
+ * stale closures and avoids expensive listener re-binding on every render.
  */
 export const useWardenInterceptor = () => {
     const { activeFilePath } = useEditorStore();
+    const { isStreaming, streamingBuffer, latestChunk } = useWardenStore();
     
-    // React closure escape hatches for asynchronous Monaco event listeners
     const activePathRef = useRef<string | null>(null);
     activePathRef.current = activeFilePath;
 
-    // Cache mapping file paths to their active Warden highlight ranges
-    const fileDecorationsRef = useRef<Map<string, any[]>>(new Map());
+    const editorInstanceRef = useRef<any>(null);
+    const monacoInstanceRef = useRef<any>(null);
     const decorationsCollectionRef = useRef<any>(null);
 
+    // Decoration Persistence Cache: Maps filePath -> Range[]
+    const fileDecorationsRef = useRef<Map<string, any[]>>(new Map());
+
+    /**
+     * Determines if a file extension warrants heuristic analysis.
+     * Prevents false-positives in documentation or non-code files.
+     */
+    const isAnalysable = (path: string | null): boolean => {
+        if (!path) return false;
+        const ext = path.split('.').pop()?.toLowerCase();
+        return ['ts', 'tsx', 'js', 'jsx', 'rs'].includes(ext || '');
+    };
+
+    /**
+     * EFFECT: Handles incoming AI code streams from the MockService.
+     * Appends tokens to the editor buffer via the native Edits API.
+     */
+    useEffect(() => {
+        const editor = editorInstanceRef.current;
+        const monaco = monacoInstanceRef.current;
+
+        if (!editor || !monaco || !isStreaming || !latestChunk) return;
+
+        try {
+            const model = editor.getModel();
+            const lineCount = model.getLineCount();
+            const column = model.getLineMaxColumn(lineCount);
+            const range = new monaco.Range(lineCount, column, lineCount, column);
+
+            // executeEdits preserves undo/redo history and marker stability
+            editor.executeEdits('warden-stream', [{
+                range,
+                text: latestChunk,
+                forceMoveMarkers: true
+            }]);
+
+            editor.revealLine(lineCount);
+        } catch (err) {
+            SystemLogger.log(LogLevel.ERROR, 'WardenInterceptor', 'Stream insertion failed.', err);
+        }
+    }, [latestChunk, isStreaming]);
+
+    /**
+     * EFFECT: Finalizes analysis when a stream completes.
+     */
+    useEffect(() => {
+        const path = activePathRef.current;
+        if (!isStreaming && streamingBuffer.length > 0 && path && isAnalysable(path)) {
+            SystemLogger.log(LogLevel.INFO, 'WardenInterceptor', 'AI Stream finished. Analyzing block.');
+            
+            const editor = editorInstanceRef.current;
+            if (!editor) return;
+
+            WardenIPC.analyzeSelection(path, editor.getValue(), streamingBuffer, 1);
+        }
+    }, [isStreaming, streamingBuffer]);
+
     const bindWardenHeuristics = useCallback((editor: any, monaco: any) => {
+        editorInstanceRef.current = editor;
+        monacoInstanceRef.current = monaco;
         decorationsCollectionRef.current = editor.createDecorationsCollection();
 
-        // 1. LIFECYCLE SYNC: Restore highlights when returning to an existing tab
+        // 1. LIFECYCLE SYNC: Restore highlights on tab switch
         editor.onDidChangeModel(() => {
-            if (!activePathRef.current) return;
-            const savedRanges = fileDecorationsRef.current.get(activePathRef.current) || [];
+            const path = activePathRef.current;
+            if (!path) return;
+            const savedRanges = fileDecorationsRef.current.get(path) || [];
             
             decorationsCollectionRef.current.set(savedRanges.map((range: any) => ({
                 range,
                 options: {
                     isWholeLine: true,
                     className: 'warden-paste-highlight',
-                    description: 'Unchecked paste block',
+                    description: 'Unchecked content',
                     stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges
                 }
             })));
         });
 
-        // 2. CORE HEURISTICS: Flag pastes and dispatch to the Rust backend (Sprint 4)
+        // 2. CORE HEURISTICS: Flag manual pastes and dispatch to the Rust backend
         editor.onDidPaste((e: any) => {
-            SystemLogger.log(LogLevel.INFO, 'WardenInterceptor', 'Paste detected. Flagging and dispatching to Engine.');
+            const path = activePathRef.current;
+            if (!path) return;
+
+            SystemLogger.log(LogLevel.INFO, 'WardenEngine', 'Paste event detected.');
             
-            // Apply visual highlight
             decorationsCollectionRef.current.append([{
                 range: e.range,
                 options: {
@@ -52,31 +119,19 @@ export const useWardenInterceptor = () => {
                 }
             }]);
 
-            // Persist the new range to the memory cache
-            if (activePathRef.current) {
-                fileDecorationsRef.current.set(activePathRef.current, decorationsCollectionRef.current.getRanges());
-            }
-
-            // --- SPRINT 4 IPC DISPATCH ---
-            try {
-                if (activePathRef.current) {
-                    const fullFileBuffer = editor.getValue();
-                    const targetChunk = editor.getModel().getValueInRange(e.range);
-                    
-                    // Fire-and-forget asynchronous analysis pipeline
-                    WardenIPC.analyzeSelection(
-                        activePathRef.current,
-                        fullFileBuffer,
-                        targetChunk,
-                        e.range.startLineNumber
-                    );
-                }
-            } catch (err) {
-                SystemLogger.log(LogLevel.ERROR, 'WardenInterceptor', 'Failed to dispatch IPC payload.', err);
+            fileDecorationsRef.current.set(path, decorationsCollectionRef.current.getRanges());
+            
+            if (isAnalysable(path)) {
+                WardenIPC.analyzeSelection(
+                    path,
+                    editor.getValue(),
+                    editor.getModel().getValueInRange(e.range),
+                    e.range.startLineNumber
+                );
             }
         });
 
-        // 3. EVENT LISTENER: Clean up "ghost" highlights if the user deletes the flagged code
+        // 3. EVENT LISTENER: Clean up decorations if code is deleted
         editor.onDidChangeModelContent(() => {
             try {
                 const ranges = decorationsCollectionRef.current.getRanges();
@@ -85,28 +140,25 @@ export const useWardenInterceptor = () => {
                     return;
                 }
 
-                // Filter out ranges reduced to 0 lines by user backspacing
                 const validRanges = ranges.filter((r: any) => !r.isEmpty());
 
-                // Reset Monaco collection if we detected empty ranges
                 if (validRanges.length !== ranges.length) {
                     decorationsCollectionRef.current.set(validRanges.map((range: any) => ({
                         range,
                         options: {
                             isWholeLine: true,
                             className: 'warden-paste-highlight',
-                            description: 'Unchecked paste block',
+                            description: 'Unchecked content',
                             stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges
                         }
                     })));
                 }
 
-                // Sync the cleaned ranges back to the memory cache
                 if (activePathRef.current) {
                     fileDecorationsRef.current.set(activePathRef.current, validRanges);
                 }
             } catch (err) {
-                SystemLogger.log(LogLevel.ERROR, 'WardenInterceptor', 'Failed to clean up paste decorations.', err);
+                SystemLogger.log(LogLevel.ERROR, 'WardenInterceptor', 'Decoration cleanup failure.', err);
             }
         });
 
