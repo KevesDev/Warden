@@ -1,6 +1,6 @@
 import React from 'react';
 import { useEditorStore } from '@core/state/editorStore';
-import { THEME } from '@components/layout/WorkspaceLayout';
+import { THEME } from '@core/constants/theme';
 
 interface TabItemProps {
     filePath: string;

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { FileNode } from '@core/contracts/FileTree';
 import { FileSystemIPC } from '@services/rust-bridge/fileSystemIpc';
 import { FileNodeItem } from './FileNodeItem';
-import { THEME } from '@components/layout/WorkspaceLayout';
+import { THEME } from '@core/constants/theme';
 
 export const FileExplorer: React.FC = () => {
     const [rootNode, setRootNode] = useState<FileNode | null>(null);

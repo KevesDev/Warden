@@ -1,7 +1,7 @@
 import React from 'react';
 import { FileNode } from '@core/contracts/FileTree';
 import { useFileNode } from './hooks/useFileNode';
-import { THEME } from '@components/layout/WorkspaceLayout';
+import { THEME } from '@core/constants/theme'; // Corrected import path
 
 interface FileNodeItemProps {
     node: FileNode;
@@ -47,24 +47,7 @@ export const FileNodeItem: React.FC<FileNodeItemProps> = ({ node, depth }) => {
 };
 
 const styles = {
-    nodeContainer: {
-        display: 'flex',
-        alignItems: 'center',
-        padding: '4px 8px',
-        cursor: 'pointer',
-        userSelect: 'none' as const,
-        fontSize: '13px',
-        whiteSpace: 'nowrap' as const,
-        overflow: 'hidden',
-        textOverflow: 'ellipsis'
-    },
-    icon: {
-        marginRight: '6px',
-        fontSize: '11px',
-        opacity: 0.8
-    },
-    fileName: {
-        overflow: 'hidden',
-        textOverflow: 'ellipsis'
-    }
+    nodeContainer: { display: 'flex', alignItems: 'center', padding: '4px 8px', cursor: 'pointer', userSelect: 'none' as const, fontSize: '13px', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
+    icon: { marginRight: '6px', fontSize: '11px', opacity: 0.8 },
+    fileName: { overflow: 'hidden', textOverflow: 'ellipsis' }
 };

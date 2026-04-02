@@ -1,7 +1,7 @@
 import React from 'react';
 import { useEditorStore } from '@core/state/editorStore';
 import { TabItem } from './TabItem';
-import { THEME } from '@components/layout/WorkspaceLayout';
+import { THEME } from '@core/constants/theme';
 
 /**
  * Container for all open file tabs. 
