@@ -19,6 +19,9 @@ export const useWardenInterceptor = () => {
     const activePathRef = useRef<string | null>(null);
     activePathRef.current = activeFilePath;
 
+    // Stream Context Lock: Prevents analysis misattribution if tabs change mid-stream
+    const streamContextPathRef = useRef<string | null>(null);
+
     const editorInstanceRef = useRef<any>(null);
     const monacoInstanceRef = useRef<any>(null);
     const decorationsCollectionRef = useRef<any>(null);
@@ -46,6 +49,11 @@ export const useWardenInterceptor = () => {
 
         if (!editor || !monaco || !isStreaming || !latestChunk) return;
 
+        // Lock the context path on the first streaming chunk
+        if (!streamContextPathRef.current) {
+            streamContextPathRef.current = activeFilePath;
+        }
+
         try {
             const model = editor.getModel();
             const lineCount = model.getLineCount();
@@ -63,20 +71,25 @@ export const useWardenInterceptor = () => {
         } catch (err) {
             SystemLogger.log(LogLevel.ERROR, 'WardenInterceptor', 'Stream insertion failed.', err);
         }
-    }, [latestChunk, isStreaming]);
+    }, [latestChunk, isStreaming, activeFilePath]);
 
     /**
      * EFFECT: Finalizes analysis when a stream completes.
+     * Analyzes against the locked context path rather than the potentially changed active tab.
      */
     useEffect(() => {
-        const path = activePathRef.current;
-        if (!isStreaming && streamingBuffer.length > 0 && path && isAnalysable(path)) {
-            SystemLogger.log(LogLevel.INFO, 'WardenInterceptor', 'AI Stream finished. Analyzing block.');
+        const targetPath = streamContextPathRef.current;
+
+        if (!isStreaming && streamingBuffer.length > 0 && targetPath && isAnalysable(targetPath)) {
+            SystemLogger.log(LogLevel.INFO, 'WardenInterceptor', `AI Stream finished. Analyzing block for: ${targetPath}`);
             
             const editor = editorInstanceRef.current;
-            if (!editor) return;
+            if (editor) {
+                WardenIPC.analyzeSelection(targetPath, editor.getValue(), streamingBuffer, 1);
+            }
 
-            WardenIPC.analyzeSelection(path, editor.getValue(), streamingBuffer, 1);
+            // Release context lock for the next stream
+            streamContextPathRef.current = null;
         }
     }, [isStreaming, streamingBuffer]);
 
@@ -165,4 +178,4 @@ export const useWardenInterceptor = () => {
     }, []);
 
     return { bindWardenHeuristics };
-};
+}
