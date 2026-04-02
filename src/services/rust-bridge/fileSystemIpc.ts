@@ -1,36 +1,49 @@
 import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
 import { IpcCommand, ReadDirectoryResponse } from '@core/contracts/IpcBridge';
+import { useEditorStore } from '@core/state/editorStore';
 import { SystemLogger, LogLevel } from '@core/utils/systemLogger';
 
 export class FileSystemIPC {
     /**
-     * Triggers the native OS folder selection dialog.
-     * @returns The selected absolute directory path, or null if canceled.
+     * The unified entry point for opening a workspace.
+     * Consolidates logic for TopMenu and Sidebar to ensure a single source of truth.
      */
-    public static async promptDirectorySelection(): Promise<string | null> {
-        SystemLogger.log(LogLevel.IPC_TRAFFIC, 'FileSystemIPC', 'Opening native directory selection dialog');
-        const selectedPath = await open({
-            directory: true,
-            multiple: false
-        });
+    public static async openWorkspace(): Promise<void> {
+        const store = useEditorStore.getState();
+        
+        SystemLogger.log(LogLevel.INFO, 'FileSystemIPC', 'Opening directory selection dialog');
+        
+        try {
+            const selectedPath = await open({
+                directory: true,
+                multiple: false
+            });
 
-        return (typeof selectedPath === 'string') ? selectedPath : null;
+            if (typeof selectedPath === 'string') {
+                store.setStatus('Loading workspace...');
+                const response = await invoke<ReadDirectoryResponse>(IpcCommand.ReadDirectory, {
+                    directoryPath: selectedPath 
+                });
+                
+                // Hydrate global tree
+                store.setRootNode(response.root_node);
+                store.setStatus(`Workspace loaded: ${selectedPath}`);
+                SystemLogger.log(LogLevel.INFO, 'FileSystemIPC', `Workspace hydrated: ${selectedPath}`);
+            }
+        } catch (error) {
+            SystemLogger.log(LogLevel.ERROR, 'FileSystemIPC', 'Failed to initialize workspace', error);
+            store.setStatus('Failed to open workspace.');
+        }
     }
 
     /**
-     * Invokes the Rust backend to read a directory shallowly.
+     * Reads a directory shallowly for lazy loading.
      */
     public static async readDirectory(path: string): Promise<ReadDirectoryResponse> {
-        SystemLogger.log(LogLevel.IPC_TRAFFIC, 'FileSystemIPC', `Invoking ${IpcCommand.ReadDirectory}`, { path });
-        try {
-            const response = await invoke<ReadDirectoryResponse>(IpcCommand.ReadDirectory, {
-                directoryPath: path 
-            });
-            return response;
-        } catch (error) {
-            SystemLogger.log(LogLevel.ERROR, 'FileSystemIPC', `Failed to read directory: ${path}`, error);
-            throw error;
-        }
+        SystemLogger.log(LogLevel.IPC_TRAFFIC, 'FileSystemIPC', `Reading directory: ${path}`);
+        return await invoke<ReadDirectoryResponse>(IpcCommand.ReadDirectory, {
+            directoryPath: path 
+        });
     }
 }
