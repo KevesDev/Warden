@@ -7,18 +7,16 @@ interface TabItemProps {
 }
 
 /**
- * Renders an individual file tab.
- * Subscribes to the global Zustand store to determine active state and handle close events.
+ * Individual file tab component.
+ * Subscribes to the dirtyFiles set to display unsaved change indicators.
  */
 export const TabItem: React.FC<TabItemProps> = ({ filePath }) => {
-    const { activeFilePath, unsavedChanges, setActiveFile, closeFile } = useEditorStore();
+    // Audit: Ensuring all destructured properties are defined in EditorState
+    const { activeFilePath, dirtyFiles, setActiveFile, closeTab } = useEditorStore();
 
-    // Extract just the filename from the absolute path
     const fileName = filePath.split(/[\\/]/).pop() || 'Unknown File';
-    
     const isActive = activeFilePath === filePath;
-    // Per Sprint 0 constraints, unsavedChanges is global to the active file.
-    const showUnsavedIndicator = isActive && unsavedChanges;
+    const isDirty = dirtyFiles.has(filePath);
 
     const handleTabClick = () => {
         if (!isActive) {
@@ -27,8 +25,8 @@ export const TabItem: React.FC<TabItemProps> = ({ filePath }) => {
     };
 
     const handleCloseClick = (e: React.MouseEvent) => {
-        e.stopPropagation(); // Prevent tab click from firing when closing
-        closeFile(filePath);
+        e.stopPropagation(); 
+        closeTab(filePath);
     };
 
     return (
@@ -40,11 +38,11 @@ export const TabItem: React.FC<TabItemProps> = ({ filePath }) => {
                 borderTop: isActive ? `2px solid ${THEME.retroPlasma}` : `2px solid transparent`,
                 color: isActive ? THEME.textPrimary : THEME.textSecondary,
             }}
-            title={filePath} // Hover to see full path
+            title={filePath} 
         >
             <span style={styles.fileName}>
                 {fileName}
-                {showUnsavedIndicator && <span style={styles.unsavedDot}> •</span>}
+                {isDirty && <span style={styles.unsavedDot}> •</span>}
             </span>
             <button 
                 onClick={handleCloseClick}
@@ -52,7 +50,6 @@ export const TabItem: React.FC<TabItemProps> = ({ filePath }) => {
                     ...styles.closeButton,
                     color: isActive ? THEME.textPrimary : THEME.textSecondary
                 }}
-                aria-label={`Close ${fileName}`}
             >
                 ×
             </button>
@@ -61,34 +58,8 @@ export const TabItem: React.FC<TabItemProps> = ({ filePath }) => {
 };
 
 const styles = {
-    tabContainer: {
-        display: 'flex',
-        alignItems: 'center',
-        padding: '6px 12px',
-        cursor: 'pointer',
-        userSelect: 'none' as const,
-        borderRight: `1px solid ${THEME.synthwaveViolet}`,
-        minWidth: '120px',
-        maxWidth: '200px',
-    },
-    fileName: {
-        fontSize: '12px',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap' as const,
-        flex: 1,
-    },
-    unsavedDot: {
-        color: THEME.retroPlasma,
-        fontWeight: 'bold',
-    },
-    closeButton: {
-        background: 'transparent',
-        border: 'none',
-        cursor: 'pointer',
-        fontSize: '16px',
-        marginLeft: '8px',
-        padding: '0 4px',
-        lineHeight: '12px',
-    }
+    tabContainer: { display: 'flex', alignItems: 'center', padding: '6px 12px', cursor: 'pointer', userSelect: 'none' as const, borderRight: `1px solid ${THEME.synthwaveViolet}`, minWidth: '120px', maxWidth: '200px' },
+    fileName: { fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, flex: 1 },
+    unsavedDot: { color: THEME.retroPlasma, fontWeight: 'bold' },
+    closeButton: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '16px', marginLeft: '8px', padding: '0 4px', lineHeight: '12px' }
 };

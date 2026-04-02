@@ -4,9 +4,13 @@ import { useEditorStore } from '@core/state/editorStore';
 import { FileNodeItem } from './FileNodeItem';
 import { THEME } from '@core/constants/theme';
 
+/**
+ * Tree-view navigator for the local workspace.
+ */
 export const FileExplorer: React.FC = () => {
-    const { rootNode, setRootNode } = useEditorStore();
+    const { rootNode } = useEditorStore();
 
+    // Uses the shared Workspace initialization logic from the centralized service
     const handleOpenFolder = () => FileSystemIPC.openWorkspace();
 
     return (
@@ -20,9 +24,14 @@ export const FileExplorer: React.FC = () => {
             
             <div style={styles.treeContainer}>
                 {!rootNode ? (
-                    <div style={styles.message}>No folder opened.</div>
+                    <div style={styles.emptyMessage}>No workspace selected.</div>
                 ) : (
-                    <FileNodeItem node={rootNode} depth={0} />
+                    /* *
+                     * Applying the path as the 'key' forces React to completely unmount 
+                     * and remount this component when the workspace changes. 
+                     * This prevents the useFileNode hook from holding onto stale children state.
+                     */
+                    <FileNodeItem key={rootNode.path} node={rootNode} depth={0} />
                 )}
             </div>
         </div>
@@ -35,5 +44,5 @@ const styles = {
     title: { fontSize: '11px', fontWeight: 'bold', color: THEME.textSecondary, letterSpacing: '1px' },
     actionButton: { backgroundColor: THEME.retroPlasma, color: '#FFFFFF', border: 'none', padding: '4px 8px', fontSize: '11px', cursor: 'pointer', borderRadius: '3px', fontWeight: 'bold' },
     treeContainer: { flex: 1, overflow: 'auto' as const, paddingTop: '6px' },
-    message: { padding: '12px', color: THEME.textSecondary, fontSize: '13px', textAlign: 'center' as const }
+    emptyMessage: { padding: '12px', color: THEME.textSecondary, fontSize: '13px', textAlign: 'center' as const }
 };

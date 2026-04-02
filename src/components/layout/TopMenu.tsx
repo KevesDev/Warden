@@ -3,37 +3,27 @@ import { THEME } from '@core/constants/theme';
 import { useEditorStore } from '@core/state/editorStore';
 import { WindowIPC } from '@services/rust-bridge/WindowIpc';
 import { FileSystemIPC } from '@services/rust-bridge/fileSystemIpc';
-import { FileOpsIPC } from '@services/rust-bridge/fileOpsIpc';
 
+/**
+ * Custom Titlebar implementing industry-standard IDE navigation.
+ */
 export const TopMenu: React.FC = () => {
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const { 
         activeFilePath, 
-        fileBuffers,
-        dirtyFiles,
-        closeFile, 
+        closeTab, 
+        saveActiveFile,
         saveAll,
         isTerminalVisible, 
         isWardenVisible, 
         toggleTerminal, 
-        toggleWarden,
-        setStatus
+        toggleWarden 
     } = useEditorStore();
 
-    const handleSave = async () => {
+    // Helper to close dropdowns after selection
+    const run = (action: () => void) => {
+        action();
         setActiveMenu(null);
-        if (!activeFilePath) return;
-        const content = fileBuffers.get(activeFilePath);
-        if (content !== undefined) {
-            const res = await FileOpsIPC.writeFile(activeFilePath, content);
-            if (res.success) {
-                // Clear dirty flag
-                const newDirty = new Set(dirtyFiles);
-                newDirty.delete(activeFilePath);
-                useEditorStore.setState({ dirtyFiles: newDirty });
-                setStatus('File saved.');
-            }
-        }
     };
 
     return (
@@ -41,7 +31,7 @@ export const TopMenu: React.FC = () => {
             <div style={styles.leftSection}>
                 <div style={styles.logo} data-tauri-drag-region>W</div>
                 
-                {/* File Menu */}
+                {/* Menu: File */}
                 <div style={styles.menuItemWrapper}>
                     <button 
                         style={activeMenu === 'File' ? styles.menuButtonActive : styles.menuButton} 
@@ -51,15 +41,17 @@ export const TopMenu: React.FC = () => {
                     </button>
                     {activeMenu === 'File' && (
                         <div style={styles.dropdown}>
-                            <div style={styles.dropdownItem} onClick={() => { FileSystemIPC.openWorkspace(); setActiveMenu(null); }}>Open Folder</div>
-                            <div style={styles.dropdownItem} onClick={handleSave}>Save</div>
-                            <div style={styles.dropdownItem} onClick={() => { saveAll(); setActiveMenu(null); }}>Save All</div>
-                            <div style={styles.dropdownItem} onClick={() => { if (activeFilePath) closeFile(activeFilePath); setActiveMenu(null); }}>Close Tab</div>
+                            <div style={styles.dropdownItem} onClick={() => run(FileSystemIPC.openWorkspace)}>Open Folder...</div>
+                            <div style={styles.divider} />
+                            <div style={styles.dropdownItem} onClick={() => run(saveActiveFile)}>Save</div>
+                            <div style={styles.dropdownItem} onClick={() => run(saveAll)}>Save All</div>
+                            <div style={styles.divider} />
+                            <div style={styles.dropdownItem} onClick={() => run(() => { if (activeFilePath) closeTab(activeFilePath); })}>Close Tab</div>
                         </div>
                     )}
                 </div>
 
-                {/* View Menu */}
+                {/* Menu: View */}
                 <div style={styles.menuItemWrapper}>
                     <button 
                         style={activeMenu === 'View' ? styles.menuButtonActive : styles.menuButton} 
@@ -69,10 +61,10 @@ export const TopMenu: React.FC = () => {
                     </button>
                     {activeMenu === 'View' && (
                         <div style={styles.dropdown}>
-                            <div style={styles.dropdownItem} onClick={() => { toggleTerminal(); setActiveMenu(null); }}>
+                            <div style={styles.dropdownItem} onClick={() => run(toggleTerminal)}>
                                 {isTerminalVisible ? 'Hide Terminal' : 'Show Terminal'}
                             </div>
-                            <div style={styles.dropdownItem} onClick={() => { toggleWarden(); setActiveMenu(null); }}>
+                            <div style={styles.dropdownItem} onClick={() => run(toggleWarden)}>
                                 {isWardenVisible ? 'Hide Warden Sidebar' : 'Show Warden Sidebar'}
                             </div>
                         </div>
@@ -93,12 +85,13 @@ export const TopMenu: React.FC = () => {
 const styles = {
     titlebar: { height: '30px', backgroundColor: THEME.deepVoid, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${THEME.synthwaveViolet}`, userSelect: 'none' as const },
     leftSection: { display: 'flex', alignItems: 'center', height: '100%' },
-    logo: { color: THEME.retroPlasma, fontWeight: 'bold', padding: '0 12px', fontSize: '14px' },
+    logo: { color: THEME.retroPlasma, fontWeight: 'bold', padding: '0 12px', fontSize: '14px', cursor: 'default' },
     menuItemWrapper: { position: 'relative' as const, height: '100%' },
     menuButton: { background: 'none', border: 'none', color: THEME.textPrimary, fontSize: '12px', padding: '0 12px', cursor: 'pointer', height: '100%' },
     menuButtonActive: { background: THEME.midnightPurple, border: 'none', color: THEME.textPrimary, fontSize: '12px', padding: '0 12px', cursor: 'pointer', height: '100%' },
-    dropdown: { position: 'absolute' as const, top: '30px', left: 0, backgroundColor: THEME.midnightPurple, border: `1px solid ${THEME.synthwaveViolet}`, minWidth: '160px', zIndex: 1000, padding: '4px 0' },
+    dropdown: { position: 'absolute' as const, top: '30px', left: 0, backgroundColor: THEME.midnightPurple, border: `1px solid ${THEME.synthwaveViolet}`, minWidth: '180px', zIndex: 1000, padding: '4px 0', boxShadow: '0px 4px 6px rgba(0,0,0,0.5)' },
     dropdownItem: { padding: '6px 16px', fontSize: '12px', color: THEME.textPrimary, cursor: 'pointer' },
+    divider: { height: '1px', backgroundColor: THEME.synthwaveViolet, margin: '4px 0' },
     windowControls: { display: 'flex', height: '100%' },
     controlButton: { background: 'none', border: 'none', width: '45px', height: '100%', color: THEME.textPrimary, cursor: 'pointer' },
     closeButton: { background: 'none', border: 'none', width: '45px', height: '100%', color: THEME.textPrimary, cursor: 'pointer' },

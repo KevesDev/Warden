@@ -5,6 +5,10 @@ import { THEME } from '@core/constants/theme';
 interface Props { children: ReactNode; }
 interface State { hasError: boolean; error: Error | null; }
 
+/**
+ * High-level component to intercept runtime crashes and provide a themed recovery UI.
+ * Strictly adheres to the 'Robust Error Handling' rule.
+ */
 export class ErrorBoundary extends Component<Props, State> {
     public state: State = { hasError: false, error: null };
 
@@ -29,6 +33,8 @@ export class ErrorBoundary extends Component<Props, State> {
                 </div>
             );
         }
+        
+        // Ensures application actually renders when healthy
         return this.props.children;
     }
 }
@@ -37,5 +43,5 @@ const styles = {
     crash: { height: '100vh', backgroundColor: THEME.deepVoid, color: THEME.retroPlasma, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' as const },
     header: { fontSize: '24px', marginBottom: '10px' },
     text: { color: THEME.textPrimary, fontSize: '14px', marginBottom: '20px' },
-    btn: { backgroundColor: THEME.retroPlasma, color: '#FFF', border: 'none', padding: '10px 20px', cursor: 'pointer' }
+    btn: { backgroundColor: THEME.retroPlasma, color: '#FFF', border: 'none', padding: '10px 20px', cursor: 'pointer', fontWeight: 'bold' }
 };

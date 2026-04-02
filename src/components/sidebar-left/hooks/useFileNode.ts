@@ -8,12 +8,13 @@ export const useFileNode = (initialNode: FileNode) => {
     const [childrenNodes, setChildrenNodes] = useState<FileNode[] | null>(initialNode.children || null);
     const [isLoading, setIsLoading] = useState(false);
     
-    const { activeFilePath, openFile } = useEditorStore();
+    // Use openTab to decouple tab creation from disk hydration
+    const { activeFilePath, openTab } = useEditorStore();
     const isActive = activeFilePath === initialNode.path;
 
     const handleInteraction = async () => {
         if (!initialNode.is_directory) {
-            openFile(initialNode.path);
+            openTab(initialNode.path);
             return;
         }
 

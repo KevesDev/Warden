@@ -4,17 +4,21 @@ import { IpcCommand, ReadDirectoryResponse } from '@core/contracts/IpcBridge';
 import { useEditorStore } from '@core/state/editorStore';
 import { SystemLogger, LogLevel } from '@core/utils/systemLogger';
 
+/**
+ * Service for native file system interactions.
+ * Bridges the React frontend with the Rust backend via Tauri IPC.
+ */
 export class FileSystemIPC {
     /**
-     * The unified entry point for opening a workspace.
-     * Consolidates logic for TopMenu and Sidebar to ensure a single source of truth.
+     * Triggers the native folder selection dialog and hydrates the Warden workspace.
+     * Reuses logic across Sidebar and Top Menu to eliminate technical debt.
      */
     public static async openWorkspace(): Promise<void> {
+        // Accessing the store's static state to dispatch actions safely outside of React render cycle
         const store = useEditorStore.getState();
         
-        SystemLogger.log(LogLevel.INFO, 'FileSystemIPC', 'Opening directory selection dialog');
-        
         try {
+            SystemLogger.log(LogLevel.INFO, 'FileSystemIPC', 'Opening directory selection dialog');
             const selectedPath = await open({
                 directory: true,
                 multiple: false
@@ -22,13 +26,14 @@ export class FileSystemIPC {
 
             if (typeof selectedPath === 'string') {
                 store.setStatus('Loading workspace...');
+                
                 const response = await invoke<ReadDirectoryResponse>(IpcCommand.ReadDirectory, {
                     directoryPath: selectedPath 
                 });
                 
-                // Hydrate global tree
-                store.setRootNode(response.root_node);
-                store.setStatus(`Workspace loaded: ${selectedPath}`);
+                // Hydrate the global tree and reset UI buffers
+                store.setWorkspace(response.root_node);
+                store.setStatus(`Workspace hydrated: ${selectedPath}`);
                 SystemLogger.log(LogLevel.INFO, 'FileSystemIPC', `Workspace hydrated: ${selectedPath}`);
             }
         } catch (error) {
@@ -38,7 +43,7 @@ export class FileSystemIPC {
     }
 
     /**
-     * Reads a directory shallowly for lazy loading.
+     * Shallow reads a directory for lazy-loading sub-nodes in the File Explorer.
      */
     public static async readDirectory(path: string): Promise<ReadDirectoryResponse> {
         SystemLogger.log(LogLevel.IPC_TRAFFIC, 'FileSystemIPC', `Reading directory: ${path}`);
