@@ -15,21 +15,22 @@ interface PtyOutputPayload {
 }
 
 /**
- * Terminal component utilizing xterm.js for high-performance rendering.
- * Reactive to the global workspace path to ensure native shell synchronization.
+ * Production-level terminal component utilizing xterm.js and a native PTY backend.
+ * Safely guards against xterm-addon-fit RenderService crashes and properly scopes
+ * OS sessions to the active workspace.
  */
 export const WardenTerminal: React.FC = () => {
     const terminalRef = useRef<HTMLDivElement>(null);
     const xtermInstance = useRef<Terminal | null>(null);
+    const fitAddonInstance = useRef<FitAddon | null>(null);
     const currentSessionId = useRef<number>(0);
     
-    // Subscribe to the workspace path to drive shell re-initialization.
     const { activeWorkspacePath, setStatus } = useEditorStore();
 
+    // 1. UI LIFECYCLE: Mounts the terminal instance exactly once.
     useEffect(() => {
         if (!terminalRef.current) return;
 
-        // Initialize xterm.js with the Warden theme.
         const term = new Terminal({
             cursorBlink: true,
             fontFamily: "'Fira Code', monospace",
@@ -55,59 +56,95 @@ export const WardenTerminal: React.FC = () => {
         term.loadAddon(fitAddon);
         term.open(terminalRef.current);
         
-        // Initial layout adjustment.
-        setTimeout(() => fitAddon.fit(), 0);
         xtermInstance.current = term;
+        fitAddonInstance.current = fitAddon;
 
-        /**
-         * Initialize the native shell via IPC.
-         * The 'workspace_path' key is explicitly mapped to the Rust command parameter.
-         */
-        invoke<number>('spawn_pty', { workspace_path: activeWorkspacePath })
-            .then((sessionId) => {
-                currentSessionId.current = sessionId;
-                SystemLogger.log(LogLevel.INFO, 'Terminal', `Terminal session ${sessionId} active.`);
-            })
-            .catch(err => {
-                SystemLogger.log(LogLevel.ERROR, 'Terminal', 'PTY spawn failed', err);
-                setStatus('Terminal initialization failed.');
-                term.write('\r\n\x1b[31m[ERROR] Native shell failed to initialize.\x1b[0m\r\n');
-            });
+        // Airtight layout calculation wrapper.
+        // xterm-addon-fit is notoriously unstable if the DOM is detached during React Strict Mode.
+        const safeFit = () => {
+            const container = terminalRef.current;
+            if (!term || !fitAddon || !container) return;
+            
+            // Guard: Container must be physically present and have dimensions
+            if (container.clientWidth === 0 || container.clientHeight === 0) return;
+            if (!document.body.contains(container)) return;
 
-        // Bridge UI keystrokes to Rust.
+            try {
+                fitAddon.fit();
+                if (term.rows && term.cols) {
+                    invoke('resize_pty', { rows: term.rows, cols: term.cols }).catch(() => {});
+                }
+            } catch (error) {
+                // Silently trap the "Cannot read properties of undefined (reading 'dimensions')" 
+                // error. This is an upstream xterm.js bug during rapid DOM detachment.
+            }
+        };
+
+        // Route keystrokes to the backend
         const dataListener = term.onData((data) => {
             invoke('write_pty', { data }).catch(() => {});
         });
 
-        // Bridge Rust stdout to UI, filtering by session_id.
+        // Listen for stdout. Discards output from stale zombie threads.
         const unlistenPromise = listen<PtyOutputPayload>('pty-output', (event) => {
             if (event.payload.session_id === currentSessionId.current) {
                 term.write(event.payload.payload);
             }
         });
 
-        // Dynamic resizing observer.
         const resizeObserver = new ResizeObserver(() => {
-            if (xtermInstance.current) {
-                fitAddon.fit();
-                invoke('resize_pty', { 
-                    rows: term.rows, 
-                    cols: term.cols 
-                }).catch(() => {});
-            }
+            safeFit();
         });
         
         resizeObserver.observe(terminalRef.current);
 
-        // Standard lifecycle cleanup.
+        setTimeout(safeFit, 100);
+
         return () => {
             dataListener.dispose();
             unlistenPromise.then(u => u());
             resizeObserver.disconnect();
             term.dispose();
-            SystemLogger.log(LogLevel.INFO, 'Terminal', 'Terminal session disposed.');
+            xtermInstance.current = null;
         };
-    }, [activeWorkspacePath]);
+    }, []);
+
+    // 2. PROCESS LIFECYCLE: Drives the backend shell when the workspace changes.
+    useEffect(() => {
+        const spawnProcess = async () => {
+            // Await terminal UI initialization to ensure the write buffer is ready
+            let attempts = 0;
+            while (!xtermInstance.current && attempts < 20) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+                attempts++;
+            }
+
+            const term = xtermInstance.current;
+            if (!term) return;
+            
+            // Generate Session ID on the frontend to completely eliminate IPC race conditions
+            const newSessionId = Date.now();
+            currentSessionId.current = newSessionId;
+            
+            term.clear();
+            term.write('\x1b[36m[Warden] Synchronizing native shell...\x1b[0m\r\n');
+
+            try {
+                // IPC Keys dynamically mapped to Rust snake_case by Tauri
+                await invoke('spawn_pty', { 
+                    sessionId: newSessionId, 
+                    workspacePath: activeWorkspacePath 
+                });
+                SystemLogger.log(LogLevel.INFO, 'Terminal', `Session ${newSessionId} anchored to: ${activeWorkspacePath || 'Root'}`);
+            } catch (err) {
+                SystemLogger.log(LogLevel.ERROR, 'Terminal', 'Native Shell Execution Error', err);
+                setStatus('Terminal initialization failed.');
+                term.write('\r\n\x1b[31m[ERROR] Native shell failed to initialize. Review system logs.\x1b[0m\r\n');
+            }
+        };
+
+        spawnProcess();
+    }, [activeWorkspacePath, setStatus]);
 
     return (
         <div style={styles.outerWrapper}>
