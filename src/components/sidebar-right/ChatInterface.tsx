@@ -8,15 +8,15 @@ import { ChatMessage } from './ChatMessage';
 
 /**
  * Main AI Chat Interface for the right sidebar.
- * Handles user input and delegates LLM generation to the LlmOrchestrator.
- * Strictly decoupled from specific API or Mock engine implementations.
+ * Handles user input and consumes the async stream from the LlmOrchestrator,
+ * securely mutating the global store independently of the API layer.
  */
 export const ChatInterface: React.FC = () => {
     const [inputValue, setInputValue] = useState('');
     const { messages, addMessage } = useChatStore();
     
-    // Observe the Warden Store's streaming state
-    const { isStreaming } = useWardenStore();
+    // Extract stream actions from Warden Store directly
+    const { isStreaming, startStream, appendStreamChunk, endStream } = useWardenStore();
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to bottom when new messages arrive
@@ -25,7 +25,7 @@ export const ChatInterface: React.FC = () => {
     }, [messages]);
 
     /**
-     * Handles user submission, appends the message, and delegates to the Orchestrator.
+     * Handles user submission, appends the message, and consumes the Orchestrator stream.
      */
     const handleSend = async () => {
         if (!inputValue.trim() || isStreaming) return;
@@ -34,17 +34,24 @@ export const ChatInterface: React.FC = () => {
         setInputValue('');
 
         try {
-            // 1. Add User Message
+            // 1. Setup Chat UI
             addMessage('user', currentInput);
-            
-            // 2. Pre-add the Assistant's empty response shell
             addMessage('assistant', 'Generating code injection...');
 
-            // 3. Trigger the agnostic orchestrator
-            await LlmOrchestrator.streamResponse(currentInput);
+            // 2. Lock the UI and initialize the stream buffer
+            startStream();
+
+            // 3. Consume the agnostic async generator and pipe it to the Store
+            const stream = LlmOrchestrator.streamResponse(currentInput);
+            for await (const chunk of stream) {
+                appendStreamChunk(chunk);
+            }
             
         } catch (error) {
             SystemLogger.log(LogLevel.ERROR, 'ChatInterface', 'Failed to dispatch AI message via Orchestrator.', error);
+        } finally {
+            // Guarantee the UI unlocks and the Rust IPC boundary triggers
+            endStream();
         }
     };
 

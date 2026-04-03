@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { WardenAnalysisResult, LinterCard } from '@core/contracts/WardenSchema';
 import { SystemLogger, LogLevel } from '@core/utils/systemLogger';
+import { DiagnosticLogger } from '@core/utils/diagnosticLogger';
 
 /**
  * Global state manager dedicated to the Warden Engine.
@@ -42,12 +43,21 @@ export const useWardenStore = create<WardenState>((set, get) => ({
     },
 
     setAnalysisResult: (result: WardenAnalysisResult) => {
+        // Strict boundary validation to prevent undefined length crashes 
+        // if the Rust backend serializes an empty Vector as undefined.
+        const safeCards = Array.isArray(result?.cards) ? result.cards : [];
+        const safeResult = { ...result, cards: safeCards };
+
         SystemLogger.log(
             LogLevel.INFO, 
             'WardenStore', 
-            `Analysis completed for ${result.target_file_path}. Found ${result.cards.length} issues.`
+            `Analysis completed for ${safeResult.target_file_path}. Found ${safeCards.length} issues.`
         );
-        set({ activeAnalysis: result, isAnalyzing: false, focusedIssueId: null });
+        
+        // RESTORED: Explicitly pipe the findings to the diagnostic testing log
+        DiagnosticLogger.logWardenFindings(safeCards);
+        
+        set({ activeAnalysis: safeResult, isAnalyzing: false, focusedIssueId: null });
     },
 
     clearAnalysis: () => {

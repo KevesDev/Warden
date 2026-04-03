@@ -3,6 +3,7 @@ import { THEME } from '@core/constants/theme';
 import { useEditorStore } from '@core/state/editorStore';
 import { WindowIPC } from '@services/rust-bridge/WindowIpc';
 import { FileSystemIPC } from '@services/rust-bridge/fileSystemIpc';
+import { DiagnosticLogger } from '@core/utils/diagnosticLogger';
 
 /**
  * Custom Titlebar implementing industry-standard IDE navigation.
@@ -11,6 +12,8 @@ export const TopMenu: React.FC = () => {
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const { 
         activeFilePath, 
+        activeWorkspacePath, // Injected for diagnostic export
+        setStatus,           // Injected for diagnostic feedback
         closeTab, 
         saveActiveFile,
         saveAll,
@@ -24,6 +27,13 @@ export const TopMenu: React.FC = () => {
     const run = (action: () => void) => {
         action();
         setActiveMenu(null);
+    };
+
+    // Diagnostic Export Handler
+    const handleExportDiagnostics = async () => {
+        setActiveMenu(null);
+        await DiagnosticLogger.exportLog(activeWorkspacePath);
+        setStatus('Diagnostic log exported.');
     };
 
     return (
@@ -47,6 +57,22 @@ export const TopMenu: React.FC = () => {
                             <div style={styles.dropdownItem} onClick={() => run(saveAll)}>Save All</div>
                             <div style={styles.divider} />
                             <div style={styles.dropdownItem} onClick={() => run(() => { if (activeFilePath) closeTab(activeFilePath); })}>Close Tab</div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Menu: Edit */}
+                <div style={styles.menuItemWrapper}>
+                    <button 
+                        style={activeMenu === 'Edit' ? styles.menuButtonActive : styles.menuButton} 
+                        onClick={() => setActiveMenu(activeMenu === 'Edit' ? null : 'Edit')}
+                    >
+                        Edit
+                    </button>
+                    {activeMenu === 'Edit' && (
+                        <div style={styles.dropdown}>
+                            <div style={styles.dropdownSectionLabel}>Development</div>
+                            <div style={styles.dropdownItem} onClick={handleExportDiagnostics}>Export Mock Diagnostics</div>
                         </div>
                     )}
                 </div>
@@ -91,6 +117,7 @@ const styles = {
     menuButtonActive: { background: THEME.midnightPurple, border: 'none', color: THEME.textPrimary, fontSize: '12px', padding: '0 12px', cursor: 'pointer', height: '100%' },
     dropdown: { position: 'absolute' as const, top: '30px', left: 0, backgroundColor: THEME.midnightPurple, border: `1px solid ${THEME.synthwaveViolet}`, minWidth: '180px', zIndex: 1000, padding: '4px 0', boxShadow: '0px 4px 6px rgba(0,0,0,0.5)' },
     dropdownItem: { padding: '6px 16px', fontSize: '12px', color: THEME.textPrimary, cursor: 'pointer' },
+    dropdownSectionLabel: { padding: '4px 16px', fontSize: '10px', color: THEME.textSecondary, textTransform: 'uppercase' as const, letterSpacing: '0.5px', cursor: 'default' },
     divider: { height: '1px', backgroundColor: THEME.synthwaveViolet, margin: '4px 0' },
     windowControls: { display: 'flex', height: '100%' },
     controlButton: { background: 'none', border: 'none', width: '45px', height: '100%', color: THEME.textPrimary, cursor: 'pointer' },

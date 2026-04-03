@@ -1,30 +1,38 @@
-import { MOCK_SAMPLES, MockSample } from './mockSamples';
 import { SystemLogger, LogLevel } from '@core/utils/systemLogger';
+import { MockSample, MOCK_SAMPLES } from './mockSamples';
 
 /**
- * Headless mock service designed to simulate high-velocity LLM code streams.
- * Randomly selects heuristic stress-test profiles and yields them erratically
- * to test UI unblocking and Warden Engine interceptors.
+ * Headless service simulating high-velocity LLM code streaming.
+ * Consumes externalized "dirty" samples sequentially to predictably test the Warden Engine.
+ * Implements an interruption mechanism to prevent state corruption on user abort.
  */
 export class MockService {
     private static abortController: AbortController | null = null;
+    private static currentIndex: number = 0;
 
     /**
      * Executes the simulated AI stream.
-     * Randomly selects a payload from the decoupled mockSamples library.
+     * Sequentially selects a payload from the decoupled mockSamples library.
      */
     public static async *generateStream(prompt: string): AsyncGenerator<string, void, unknown> {
         this.abortController = new AbortController();
         const signal = this.abortController.signal;
 
-        // Extract available keys and execute random selection
+        // Execute sequential selection
         const sampleKeys = Object.keys(MOCK_SAMPLES) as MockSample[];
-        const randomIndex = Math.floor(Math.random() * sampleKeys.length);
-        const selectedKey = sampleKeys[randomIndex];
         
+        // Failsafe: Reset if index somehow exceeds bounds due to hot-reloading
+        if (this.currentIndex >= sampleKeys.length) {
+            this.currentIndex = 0;
+        }
+
+        const selectedKey = sampleKeys[this.currentIndex];
         const fullPayload = MOCK_SAMPLES[selectedKey];
 
-        SystemLogger.log(LogLevel.INFO, 'MockService', `Processing Prompt: "${prompt}". Randomly selected payload profile: [${selectedKey}]`);
+        // Increment and wrap around for the next prompt
+        this.currentIndex = (this.currentIndex + 1) % sampleKeys.length;
+
+        SystemLogger.log(LogLevel.INFO, 'MockService', `Processing Prompt: "${prompt}". Sequentially selected payload profile: [${selectedKey}]`);
 
         // Simulate initial network handshake latency
         await new Promise(resolve => setTimeout(resolve, 350));
@@ -56,6 +64,7 @@ export class MockService {
         if (this.abortController) {
             this.abortController.abort();
             this.abortController = null;
+            SystemLogger.log(LogLevel.INFO, 'MockService', 'Active stream aborted by user.');
         }
     }
 }

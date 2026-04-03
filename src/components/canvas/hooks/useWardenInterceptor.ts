@@ -21,6 +21,8 @@ export const useWardenInterceptor = () => {
         latestChunk, 
         activeAnalysis, 
         clearAnalysis,
+        setAnalyzingState,
+        setAnalysisResult,
         focusedIssueId 
     } = useWardenStore();
     
@@ -165,7 +167,7 @@ export const useWardenInterceptor = () => {
     useEffect(() => {
         const targetPath = streamContextPathRef.current;
 
-        if (!isStreaming && streamingBuffer.length > 0) {
+        if (!isStreaming && streamingBuffer && streamingBuffer.length > 0) {
             const editor = editorInstanceRef.current;
             const monaco = monacoInstanceRef.current;
             const startLine = streamStartLineRef.current;
@@ -176,6 +178,7 @@ export const useWardenInterceptor = () => {
             } else if (isAnalysable(targetPath) && editor && monaco && startLine) {
                 
                 const endLine = editor.getModel().getLineCount();
+                setAnalyzingState(true);
 
                 // 1. Visually highlight the newly generated block as "Unchecked"
                 decorationsCollectionRef.current.append([{
@@ -191,8 +194,10 @@ export const useWardenInterceptor = () => {
                 // Sync the cache so the highlight survives tab switching
                 fileDecorationsRef.current.set(targetPath, decorationsCollectionRef.current.getRanges());
                 
-                // 2. Dispatch to Rust Backend
-                WardenIPC.analyzeSelection(targetPath, editor.getValue(), streamingBuffer, startLine);
+                // 2. Dispatch to Rust Backend and process result
+                WardenIPC.analyzeSelection(targetPath, editor.getValue(), streamingBuffer, startLine)
+                    .then(result => setAnalysisResult(result))
+                    .catch(() => setAnalyzingState(false));
                 
             } else {
                 SystemLogger.log(LogLevel.INFO, 'WardenInterceptor', `Analysis skipped for: '${targetPath}'`);
@@ -203,7 +208,7 @@ export const useWardenInterceptor = () => {
             streamContextPathRef.current = null;
             streamStartLineRef.current = null;
         }
-    }, [isStreaming, streamingBuffer, clearAnalysis]);
+    }, [isStreaming, streamingBuffer, clearAnalysis, setAnalyzingState, setAnalysisResult]);
 
     const bindWardenHeuristics = useCallback((editor: any, monaco: any) => {
         editorInstanceRef.current = editor;
@@ -247,12 +252,16 @@ export const useWardenInterceptor = () => {
             fileDecorationsRef.current.set(path, decorationsCollectionRef.current.getRanges());
             
             if (isAnalysable(path)) {
+                useWardenStore.getState().setAnalyzingState(true);
+                
                 WardenIPC.analyzeSelection(
                     path,
                     editor.getValue(),
                     editor.getModel().getValueInRange(e.range),
                     e.range.startLineNumber 
-                );
+                )
+                .then(result => useWardenStore.getState().setAnalysisResult(result))
+                .catch(() => useWardenStore.getState().setAnalyzingState(false));
             }
         });
 

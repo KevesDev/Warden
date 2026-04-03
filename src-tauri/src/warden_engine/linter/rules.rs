@@ -40,7 +40,6 @@ impl RuleRegistry {
     pub fn build() -> Self {
         let mut rules = Vec::new();
 
-        // CATEGORY: Lazy Delegation
         rules.push(Arc::new(LinterRule {
             rule_id: "WDN-LAZY-001",
             level: ErrorLevel::Critical,
@@ -53,11 +52,11 @@ impl RuleRegistry {
             rule_id: "WDN-LAZY-002",
             level: ErrorLevel::Critical,
             message: "AI utilized ellipses or 'pass' to skip logic blocks.",
-            pattern: Regex::new(r"(\.{3}|…)\s*\n").expect("Invalid Regex Compilation: WDN-LAZY-002"),
+            // Tuned: Catches `...` sitting alone on a line (ignoring indentation) to prevent flagging spread operators.
+            pattern: Regex::new(r"(?m)^\s*(\.{3}|…)\s*$").expect("Invalid Regex Compilation: WDN-LAZY-002"),
             suggested_fix: Some("Do not accept incomplete code logic. Prompt the AI to expand the skipped block."),
         }));
 
-        // CATEGORY: Conversational Artifacts
         rules.push(Arc::new(LinterRule {
             rule_id: "WDN-CHAT-001",
             level: ErrorLevel::Warning,

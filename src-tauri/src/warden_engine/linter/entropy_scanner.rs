@@ -15,9 +15,7 @@ pub struct EntropyScanner {
 impl EntropyScanner {
     pub fn new() -> Self {
         Self {
-            // Refactored to explicitly avoid backreferences (\1).
-            // Rust's regex engine guarantees linear execution time to prevent ReDoS attacks,
-            // which requires strict finite automaton patterns without backtracking.
+            // Explicit automaton pattern to prevent ReDoS backtracking attacks
             string_extractor: Regex::new(
                 r#""([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|`([^`\\]*(?:\\.[^`\\]*)*)`"#
             ).expect("Failed to compile string extraction regex"),
@@ -26,7 +24,6 @@ impl EntropyScanner {
 
     /**
      * Calculates the Shannon entropy of a given string.
-     * Higher values indicate higher randomness (cryptographic tokens usually exceed 4.5).
      */
     fn calculate_entropy(data: &str) -> f64 {
         if data.is_empty() {
@@ -59,7 +56,6 @@ impl EntropyScanner {
             let current_line = start_line + chunk_line_index;
 
             for capture in self.string_extractor.captures_iter(line) {
-                // Determine which specific quote style matched and extract its inner group (1 = Double, 2 = Single, 3 = Backtick)
                 let matched_string = capture.get(1)
                     .or_else(|| capture.get(2))
                     .or_else(|| capture.get(3));
@@ -67,13 +63,14 @@ impl EntropyScanner {
                 if let Some(m) = matched_string {
                     let text = m.as_str();
                     
-                    // Filter: We only care about strings long enough to be an actual token/key.
-                    // A 4-character string might have high entropy but isn't a security risk.
-                    if text.len() >= 16 {
+                    // Filter: Must be at least 16 chars AND contain no spaces. 
+                    // This prevents standard conversational English strings from triggering false positives.
+                    if text.len() >= 16 && !text.contains(' ') {
                         let entropy = Self::calculate_entropy(text);
                         
-                        // Industry standard threshold for Base64/Hex cryptographic secrets is ~4.5
-                        if entropy > 4.5 {
+                        // Tuned Threshold: 3.8 catches AWS Base32 keys and alphanumeric passwords.
+                        // Standard Base64/JWTs will easily exceed 4.5.
+                        if entropy > 3.8 {
                             cards.push(LinterCard {
                                 id: format!("WDN-ENTROPY-{}-{}", current_line, m.start()),
                                 level: ErrorLevel::Critical,

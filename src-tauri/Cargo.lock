@@ -3521,6 +3521,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-sitter-javascript"
+version = "0.20.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d015c02ea98b62c806f7329ff71c383286dfc3a7a7da0cc484f6e42922f73c2c"
+dependencies = [
+ "cc",
+ "tree-sitter",
+]
+
+[[package]]
 name = "tree-sitter-typescript"
 version = "0.20.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3658,6 +3668,7 @@ dependencies = [
  "tauri-build",
  "tree-sitter",
  "tree-sitter-cpp",
+ "tree-sitter-javascript",
  "tree-sitter-typescript",
 ]
 
