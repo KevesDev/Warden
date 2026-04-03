@@ -18,7 +18,13 @@
         "open": true,
         "sidecar": true,
         "execute": true,
-        "sidecarArgs": true
+        "scope": [
+          {
+            "name": "binaries/llama-server",
+            "sidecar": true,
+            "args": true
+          }
+        ]
       },
       "fs": {
         "all": true,

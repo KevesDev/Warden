@@ -3,7 +3,7 @@ pub mod utils;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use linter::{LinterCard, rules::ErrorLevel, rules::RuleRegistry, entropy_scanner::EntropyScanner, ast_analyzer::AstAnalyzer};
+use linter::{LinterCard, rules::RuleRegistry, entropy_scanner::EntropyScanner, ast_analyzer::AstAnalyzer};
 
 #[derive(Serialize, Deserialize)]
 pub struct WardenAnalysisResult {

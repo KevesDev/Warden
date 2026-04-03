@@ -8,7 +8,6 @@ mod file_ops;
 mod warden_engine;
 mod pty;
 
-use tauri::Manager;
 use tauri::api::process::{Command, CommandEvent};
 
 /**
@@ -26,7 +25,7 @@ fn main() {
 
             // sidecar orchestration: Spawns llama-server in a detached background thread.
             // We use the binary name defined in tauri.conf.json externalBin.
-            let (mut rx, _child) = Command::new_sidecar("llama-server")
+            let (mut rx, _child) = Command::new_sidecar("binaries/llama-server")
                 .expect("Failed to locate llama-server sidecar binary")
                 .args([
                     "--model", resource_path.to_str().unwrap(),
@@ -50,9 +49,9 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            file_system::reader::read_directory,
-            file_system::reader::read_file_content,
-            file_ops::operations::open_directory,
+            file_system::read_directory,
+            file_ops::read_file,
+            file_ops::write_file,
             pty::spawn_pty,
             pty::write_pty,
             pty::resize_pty,

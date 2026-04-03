@@ -74,7 +74,7 @@ impl AstAnalyzer {
                         line_end: node_line,
                         message: "[Incomplete Logic] This syntax appears truncated or broken.".to_string(),
                         rule_triggered: "WDN-AST-FRAG".to_string(),
-                        suggested_fix: Some("Check if the AI generation was interrupted."),
+                        suggested_fix: Some("Check if the AI generation was interrupted.".to_string()),
                     }),
                     1 => cards.push(LinterCard {
                         id: format!("WDN-CATCH-{}", node_line),
@@ -82,8 +82,8 @@ impl AstAnalyzer {
                         line_start: node_line,
                         line_end: node_line,
                         message: "[Error Handling] It appears this catch block is empty and may swallow exceptions.".to_string(),
-                        rule_triggered: "WDN-AST-CATCH",
-                        suggested_fix: Some("Consider adding logging or error handling."),
+                        rule_triggered: "WDN-AST-CATCH".to_string(),
+                        suggested_fix: Some("Consider adding logging or error handling.".to_string()),
                     }),
                     3 => potential_domain_leaks.push(node_line),
                     _ => {}
@@ -100,8 +100,8 @@ impl AstAnalyzer {
                     line_start: line,
                     line_end: line,
                     message: "[Architecture] Data fetching logic detected in what seems to be a UI component.".to_string(),
-                    rule_triggered: "WDN-ARCH-BLEED",
-                    suggested_fix: Some("Consider extracting this into a separate Service for cleaner decoupling."),
+                    rule_triggered: "WDN-ARCH-BLEED".to_string(),
+                    suggested_fix: Some("Consider extracting this into a separate Service for cleaner decoupling.".to_string()),
                 });
             }
         }
