@@ -16,7 +16,7 @@ interface PtyOutputPayload {
 
 /**
  * Production-level terminal component utilizing xterm.js and a native PTY backend.
- * Safely guards against xterm-addon-fit RenderService crashes and properly scopes
+ * Safely guards against rendering lifecycle errors and properly scopes
  * OS sessions to the active workspace.
  */
 export const WardenTerminal: React.FC = () => {
@@ -27,7 +27,7 @@ export const WardenTerminal: React.FC = () => {
     
     const { activeWorkspacePath, setStatus } = useEditorStore();
 
-    // 1. UI LIFECYCLE: Mounts the terminal instance exactly once.
+    // UI Lifecycle: Mounts the terminal instance exactly once.
     useEffect(() => {
         if (!terminalRef.current) return;
 
@@ -59,33 +59,39 @@ export const WardenTerminal: React.FC = () => {
         xtermInstance.current = term;
         fitAddonInstance.current = fitAddon;
 
-        // Airtight layout calculation wrapper.
-        // xterm-addon-fit is notoriously unstable if the DOM is detached during React Strict Mode.
-        const safeFit = () => {
+        /**
+         * Calculates terminal layout geometry.
+         * Guards against upstream rendering errors when the DOM container is temporarily
+         * detached during React reflow cycles.
+         */
+        const calculateFit = () => {
             const container = terminalRef.current;
             if (!term || !fitAddon || !container) return;
             
-            // Guard: Container must be physically present and have dimensions
+            // Container must be physically present in the DOM with active dimensions
             if (container.clientWidth === 0 || container.clientHeight === 0) return;
             if (!document.body.contains(container)) return;
 
             try {
                 fitAddon.fit();
                 if (term.rows && term.cols) {
-                    invoke('resize_pty', { rows: term.rows, cols: term.cols }).catch(() => {});
+                    invoke('resize_pty', { rows: term.rows, cols: term.cols })
+                        .catch((err) => {
+                            SystemLogger.log(LogLevel.WARN, 'Terminal', 'PTY resize synchronization bypassed', err);
+                        });
                 }
             } catch (error) {
-                // Silently trap the "Cannot read properties of undefined (reading 'dimensions')" 
-                // error. This is an upstream xterm.js bug during rapid DOM detachment.
+                SystemLogger.log(LogLevel.WARN, 'Terminal', 'Layout calculation bypassed during DOM reflow', error);
             }
         };
 
-        // Route keystrokes to the backend
         const dataListener = term.onData((data) => {
-            invoke('write_pty', { data }).catch(() => {});
+            invoke('write_pty', { data })
+                .catch((err) => {
+                    SystemLogger.log(LogLevel.WARN, 'Terminal', 'Keystroke dispatch failed', err);
+                });
         });
 
-        // Listen for stdout. Discards output from stale zombie threads.
         const unlistenPromise = listen<PtyOutputPayload>('pty-output', (event) => {
             if (event.payload.session_id === currentSessionId.current) {
                 term.write(event.payload.payload);
@@ -93,12 +99,12 @@ export const WardenTerminal: React.FC = () => {
         });
 
         const resizeObserver = new ResizeObserver(() => {
-            safeFit();
+            calculateFit();
         });
         
         resizeObserver.observe(terminalRef.current);
 
-        setTimeout(safeFit, 100);
+        setTimeout(calculateFit, 100);
 
         return () => {
             dataListener.dispose();
@@ -109,10 +115,9 @@ export const WardenTerminal: React.FC = () => {
         };
     }, []);
 
-    // 2. PROCESS LIFECYCLE: Drives the backend shell when the workspace changes.
+    // Process Lifecycle: Drives the backend shell when the workspace changes.
     useEffect(() => {
         const spawnProcess = async () => {
-            // Await terminal UI initialization to ensure the write buffer is ready
             let attempts = 0;
             while (!xtermInstance.current && attempts < 20) {
                 await new Promise(resolve => setTimeout(resolve, 50));
@@ -122,7 +127,7 @@ export const WardenTerminal: React.FC = () => {
             const term = xtermInstance.current;
             if (!term) return;
             
-            // Generate Session ID on the frontend to completely eliminate IPC race conditions
+            // Generates a Unix timestamp for session tracking to prevent asynchronous IPC collisions.
             const newSessionId = Date.now();
             currentSessionId.current = newSessionId;
             
@@ -130,7 +135,8 @@ export const WardenTerminal: React.FC = () => {
             term.write('\x1b[36m[Warden] Synchronizing native shell...\x1b[0m\r\n');
 
             try {
-                // IPC Keys dynamically mapped to Rust snake_case by Tauri
+                // Tauri maps Rust's snake_case parameters to camelCase JavaScript keys.
+                // SessionID and workspacePath are mapped respectively to satisfy the macro bindings.
                 await invoke('spawn_pty', { 
                     sessionId: newSessionId, 
                     workspacePath: activeWorkspacePath 

@@ -7,9 +7,8 @@ use serde::Serialize;
 
 /**
  * Encapsulates terminal output. 
- * session_id acts as a handshake to ensure the frontend only renders 
+ * The session_id serves as a handshake, ensuring the frontend only renders 
  * data from the currently active shell process.
- * Upgraded to u64 to safely accept JS Date.now() timestamps.
  */
 #[derive(Clone, Serialize)]
 pub struct PtyOutput {
@@ -19,7 +18,7 @@ pub struct PtyOutput {
 
 /**
  * Thread-safe global state for managing the PTY backend.
- * current_session_id ensures stale threads self-terminate.
+ * Tracking the current_session_id ensures stale threads self-terminate.
  */
 pub struct PtyState {
     pub pty_master: Arc<Mutex<Option<Box<dyn portable_pty::MasterPty + Send>>>>,
@@ -40,7 +39,7 @@ impl Default for PtyState {
 /**
  * Spawns a native shell process.
  * Replaces the existing shell by dropping active handles. Bypasses 
- * canonicalization to ensure raw directory paths are accepted by PowerShell.
+ * path canonicalization to ensure raw directory paths are accepted by native OS shells.
  */
 #[tauri::command]
 pub fn spawn_pty(
@@ -50,13 +49,13 @@ pub fn spawn_pty(
     workspace_path: Option<String>
 ) -> Result<(), String> {
     
-    // 1. Session Enforcement & Cleanup
+    // Process Enforcement and Cleanup
     {
         let mut master_lock = state.pty_master.lock().unwrap();
         let mut writer_lock = state.writer.lock().unwrap();
         let mut id_lock = state.current_session_id.lock().unwrap();
         
-        // Dropping the master and writer signals the OS to terminate the old child process
+        // Dropping the master and writer signals the OS to terminate the child process
         *master_lock = None;
         *writer_lock = None;
         *id_lock = session_id;
@@ -78,9 +77,9 @@ pub fn spawn_pty(
 
     let mut cmd = CommandBuilder::new(shell);
     
-    // 2. Directory Context Binding
-    // Raw injection: We do not canonicalize, allowing native shell pathing to function normally.
-    // PowerShell rejects UNC prefixes (\\?\) which standard path canonicalization creates.
+    // Directory Context Binding
+    // Raw path injection is utilized to prevent UNC prefixes (\\?\) which standard 
+    // path canonicalization creates, as these prefixes are rejected by certain shells.
     if let Some(path_str) = workspace_path {
         if !path_str.is_empty() {
             let path = PathBuf::from(&path_str);
@@ -104,7 +103,7 @@ pub fn spawn_pty(
         *state.writer.lock().unwrap() = Some(writer);
     }
 
-    // 3. Async Output Streaming
+    // Asynchronous Output Streaming
     let session_state = Arc::clone(&state.current_session_id);
     std::thread::spawn(move || {
         let mut buf = [0u8; 1024];
@@ -144,7 +143,7 @@ pub fn write_pty(data: String, state: State<'_, PtyState>) -> Result<(), String>
 }
 
 /**
- * Resizes the PTY buffer to match the frontend UI.
+ * Resizes the PTY buffer to match the frontend UI layout geometry.
  */
 #[tauri::command]
 pub fn resize_pty(rows: u16, cols: u16, state: State<'_, PtyState>) -> Result<(), String> {
