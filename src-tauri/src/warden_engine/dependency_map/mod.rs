@@ -1,91 +1,162 @@
-use super::linter::{LinterCard, ErrorLevel};
-use regex::Regex;
-use std::collections::HashSet;
+use dashmap::DashMap;
+use ignore::WalkBuilder;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tree_sitter::{Query, QueryCursor};
+use crate::warden_engine::utils::get_parser_and_language;
 
 /**
- * Production-level Lexical Analyzer for dependency verification.
- * Cross-references pasted code against the active in-memory file buffer.
- * Flags external dependencies that are invoked by the LLM but not imported.
+ * Represents the structural location of a defined symbol within the workspace.
+ * Note: Fields are retained and silenced for upcoming LSP 'Go To Definition' provider support.
  */
-pub fn scan_for_hallucinations(
-    _file_path: &str, // Prefixed with underscore to explicitly satisfy Rust's unused variable compiler warnings
-    full_file_buffer: &str, 
-    target_chunk: &str, 
-    start_line_offset: usize
-) -> Vec<LinterCard> {
-    let mut cards = Vec::new();
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct SymbolLocation {
+    pub file_path: PathBuf,
+    pub line_number: usize,
+    pub is_header: bool,
+}
 
-    // 1. Extract valid imports from the ENTIRE file buffer (Dynamic context)
-    // Matches patterns like: import { A, B } from 'X'; and import Default from 'X';
-    let import_regex = Regex::new(r"(?m)^import\s+(?:\{([^}]+)\}|([a-zA-Z0-9_$]+))\s+from").unwrap();
-    let mut valid_scope = HashSet::new();
+/**
+ * Concurrent, AST-driven cache of all declarations within the active workspace.
+ * Utilizes shallow parsing to maintain real-time indexing without blocking the primary execution thread.
+ */
+pub struct DependencyMap {
+    // DashMap provides granular locking for high-concurrency read/write operations.
+    // Key: Symbol Name (e.g., "DatabaseConnector"), Value: Location Metadata.
+    cache: Arc<DashMap<String, SymbolLocation>>,
+}
 
-    for cap in import_regex.captures_iter(full_file_buffer) {
-        // Handle destructured imports: { A, B as C }
-        if let Some(destructured) = cap.get(1) {
-            for item in destructured.as_str().split(',') {
-                let cleaned = item.trim().split_whitespace().next().unwrap_or("");
-                if !cleaned.is_empty() {
-                    valid_scope.insert(cleaned.to_string());
+impl DependencyMap {
+    pub fn new() -> Self {
+        Self {
+            cache: Arc::new(DashMap::new()),
+        }
+    }
+
+    /**
+     * Clears the current cache and initiates a shallow AST sweep of the provided directory.
+     * Incorporates a strict, IDE-level exclusion list to prevent parsing massive dependency folders.
+     */
+    pub fn index_workspace(&self, root_path: &Path) {
+        self.cache.clear();
+        println!("[INFO] [DependencyMap] Initiating workspace index at: {:?}", root_path);
+
+        // We use WalkBuilder to traverse the directory.
+        // We enforce an explicit IDE-level exclusion list via filter_entry.
+        // This guarantees we never parse 'node_modules' or 'target' directories, even if the 
+        // user's target project lacks a .gitignore file.
+        let walker = WalkBuilder::new(root_path)
+            .hidden(true) // Ignores dotfiles like .git
+            .git_ignore(true) // Still respects project-level gitignores if they exist
+            .filter_entry(|entry| {
+                let file_name = entry.file_name().to_string_lossy();
+                !matches!(
+                    file_name.as_ref(),
+                    "node_modules" | "target" | "build" | "dist" | "out" | "bin" | "obj" | "vendor" | ".idea" | ".vscode"
+                )
+            })
+            .build();
+
+        let mut file_count = 0;
+
+        for result in walker.flatten() {
+            let path = result.path();
+            if path.is_file() {
+                if self.index_file(path) {
+                    file_count += 1;
                 }
             }
         }
-        // Handle default imports: DefaultName
-        if let Some(default_import) = cap.get(2) {
-            valid_scope.insert(default_import.as_str().to_string());
-        }
+
+        println!("[INFO] [DependencyMap] Indexing complete. Mapped {} files. Total Symbols: {}", file_count, self.cache.len());
     }
 
-    // Inject standard browser/JS globals that do not require explicit importing
-    let globals = ["console", "Math", "JSON", "Object", "Array", "Promise", "window", "document", "React"];
-    for g in globals.iter() {
-        valid_scope.insert(g.to_string());
+    /**
+     * Determines if an AI-generated symbol exists within the validated project architecture.
+     */
+    pub fn symbol_exists(&self, symbol_name: &str) -> bool {
+        self.cache.contains_key(symbol_name)
     }
 
-    // 2. Extract local definitions from the PASTED chunk to prevent false positives
-    let local_def_regex = Regex::new(r"\b(?:const|let|var|function|class)\s+([a-zA-Z_$][0-9a-zA-Z_$]*)\b").unwrap();
-    let mut local_defs = HashSet::new();
-    for cap in local_def_regex.captures_iter(target_chunk) {
-        if let Some(matched) = cap.get(1) {
-            local_defs.insert(matched.as_str().to_string());
-        }
-    }
+    /**
+     * Executes a shallow structural query against a single file to extract definitions.
+     * Returns true if the file was successfully parsed and supported.
+     */
+    fn index_file(&self, file_path: &Path) -> bool {
+        let extension = match file_path.extension().and_then(|s| s.to_str()) {
+            Some(ext) => ext,
+            None => return false,
+        };
+        
+        let is_header = extension == "h" || extension == "hpp";
 
-    // 3. Identify functional invocations and component usage in the PASTED chunk
-    // Matches React components <Component... or standard function calls func(
-    let invocation_regex = Regex::new(r"(?:<([A-Z][a-zA-Z0-9_$]*))|\b([a-zA-Z_$][0-9a-zA-Z_$]*)\s*\(").unwrap();
+        // Utilize the centralized grammar loader
+        let (mut parser, language) = match get_parser_and_language(extension) {
+            Ok(components) => components,
+            Err(_) => return false, // Silently bypass unsupported file types
+        };
 
-    for (i, line) in target_chunk.lines().enumerate() {
-        for cap in invocation_regex.captures_iter(line) {
-            // Determine if it matched a Component (group 1) or a function (group 2)
-            let identifier = cap.get(1).or_else(|| cap.get(2)).map(|m| m.as_str()).unwrap_or("");
-
-            if identifier.is_empty() {
-                continue;
+        let source_code = match std::fs::read_to_string(file_path) {
+            Ok(code) => code,
+            Err(e) => {
+                println!("[WARN] [DependencyMap] Failed to read file {:?}: {}", file_path, e);
+                return false;
             }
+        };
 
-            // Exclude common language control-flow keywords that use parentheses
-            let keywords = ["if", "for", "while", "switch", "catch", "return", "super", "function"];
-            if keywords.contains(&identifier) {
-                continue;
+        let tree = match parser.parse(&source_code, None) {
+            Some(t) => t,
+            None => {
+                println!("[WARN] [DependencyMap] Tree-sitter failed to parse {:?}", file_path);
+                return false;
             }
+        };
 
-            // Cross-Reference: If the identifier is NOT imported, NOT defined locally, and NOT a global -> Flag it
-            if !valid_scope.contains(identifier) && !local_defs.contains(identifier) {
-                let actual_line = start_line_offset + i; // Translate chunk line to absolute file line
+        // Define S-expressions to extract structural intent dynamically based on the language
+        let query_str = if extension == "ts" || extension == "tsx" || extension == "js" {
+            r#"
+                (class_declaration name: (type_identifier) @decl.class)
+                (interface_declaration name: (type_identifier) @decl.interface)
+                (function_declaration name: (identifier) @decl.func)
+            "#
+        } else {
+            // C/C++ S-expressions
+            r#"
+                (class_specifier name: (type_identifier) @decl.class)
+                (struct_specifier name: (type_identifier) @decl.struct)
+                (function_definition declarator: (function_declarator declarator: (identifier) @decl.func))
+                (declaration declarator: (function_declarator declarator: (identifier) @decl.header_func))
+            "#
+        };
 
-                cards.push(LinterCard {
-                    id: format!("ast-halluc-{}-{}", actual_line, identifier),
-                    level: ErrorLevel::CRITICAL,
-                    line_start: actual_line,
-                    line_end: actual_line,
-                    message: format!("Unresolved dependency: '{}'. This symbol is invoked but neither imported in the file nor defined in this block.", identifier),
-                    rule_triggered: "UNRESOLVED_DEPENDENCY".to_string(),
-                    suggested_fix: Some(format!("Import '{}' from its source module or define it locally.", identifier)),
-                });
+        let query = match Query::new(language, query_str) {
+            Ok(q) => q,
+            Err(e) => {
+                println!("[ERROR] [DependencyMap] Query compilation failed for {}: {}", extension, e);
+                return false;
+            }
+        };
+
+        let mut cursor = QueryCursor::new();
+        let source_bytes = source_code.as_bytes();
+
+        let matches = cursor.matches(&query, tree.root_node(), source_bytes);
+
+        for m in matches {
+            for capture in m.captures {
+                if let Ok(symbol_name) = std::str::from_utf8(&source_bytes[capture.node.byte_range()]) {
+                    let location = SymbolLocation {
+                        file_path: file_path.to_path_buf(),
+                        line_number: capture.node.start_position().row + 1,
+                        is_header,
+                    };
+                    
+                    self.cache.insert(symbol_name.to_string(), location);
+                }
             }
         }
-    }
 
-    cards
+        true
+    }
 }

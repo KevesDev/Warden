@@ -1,88 +1,98 @@
 pub mod rules;
+pub mod ast_analyzer; 
+pub mod entropy_scanner; 
 
-use rules::{RuleRegistry, RuleCategory, Severity};
-use serde::Serialize;
+use rules::{ErrorLevel, RuleRegistry};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use crate::warden_engine::dependency_map::DependencyMap;
+use ast_analyzer::AstAnalyzer;
+use entropy_scanner::EntropyScanner;
 
 /**
- * Payload sent to the frontend containing precise coordinates
- * for the Monaco Editor to render visual squiggles.
+ * Universal payload mapped strictly to the frontend WardenSchema.ts
  */
-#[derive(Debug, Clone, Serialize)]
-pub struct LinterIssue {
-    pub rule_id: String,
-    pub category: RuleCategory,
-    pub severity: Severity,
-    pub description: String,
-    pub line_number: usize,
-    pub column_start: usize,
-    pub column_end: usize,
-    pub snippet: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinterCard {
+    pub id: String,
+    pub level: ErrorLevel,
+    pub line_start: usize,
+    pub line_end: usize,
+    pub message: String,
+    pub rule_triggered: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggested_fix: Option<String>,
 }
 
 /**
  * The execution engine for Warden's heuristic analysis.
- * Operates independently of the UI and FileSystem, purely analyzing text buffers
- * against the pre-compiled RuleRegistry.
+ * Operates independently of the UI, orchestrating the AAA Tri-Layer engine:
+ * AST (Structural), Regex (Semantic), and Entropy (Algorithmic Security).
  */
 pub struct WardenLinter {
     registry: RuleRegistry,
+    ast_engine: AstAnalyzer,
+    entropy_engine: EntropyScanner,
 }
 
 impl WardenLinter {
-    /**
-     * Initializes the engine and pre-compiles the Regex library.
-     */
     pub fn new() -> Self {
         Self {
             registry: RuleRegistry::build(),
+            ast_engine: AstAnalyzer::new(),
+            entropy_engine: EntropyScanner::new(),
         }
     }
 
     /**
-     * Executes the heuristic sweep against a provided file buffer.
-     * Iterates line-by-line to extract precise coordinates for the IDE canvas.
+     * Executes the comprehensive sweep against a targeted chunk of code.
      */
-    pub fn analyze_buffer(&self, file_content: &str) -> Vec<LinterIssue> {
-        let mut issues = Vec::new();
+    pub fn analyze_payload(
+        &self, 
+        file_extension: &str,
+        full_file_content: &str,
+        target_chunk: &str, 
+        start_line: usize, 
+        end_line: usize,
+        dependency_map: &Arc<DependencyMap>
+    ) -> Vec<LinterCard> {
+        let mut cards = Vec::new();
 
-        for (line_index, line) in file_content.lines().enumerate() {
-            let line_number = line_index + 1;
+        // Layer 1: Structural AST Sweep (Hallucination Detection)
+        let mut ast_cards = self.ast_engine.detect_hallucinations(
+            file_extension,
+            full_file_content,
+            start_line,
+            end_line,
+            dependency_map
+        );
+        cards.append(&mut ast_cards);
+
+        // Layer 2: Algorithmic Security Sweep (Shannon Entropy)
+        let mut entropy_cards = self.entropy_engine.scan_payload(target_chunk, start_line);
+        cards.append(&mut entropy_cards);
+
+        // Layer 3: Semantic Sweep (Regex - Chat Leaks, Lazy Delegation)
+        for (chunk_line_index, line) in target_chunk.lines().enumerate() {
+            let current_line = start_line + chunk_line_index;
 
             for rule in &self.registry.rules {
                 for capture in rule.pattern.captures_iter(line) {
-                    if let Some(matched) = capture.get(0) {
-                        let issue = LinterIssue {
-                            rule_id: rule.id.to_string(),
-                            category: rule.category.clone(),
-                            severity: rule.severity.clone(),
-                            description: rule.description.to_string(),
-                            line_number,
-                            column_start: matched.start() + 1, // 1-indexed for Monaco Editor
-                            column_end: matched.end() + 1,
-                            snippet: matched.as_str().to_string(),
-                        };
-                        issues.push(issue);
+                    if let Some(_matched) = capture.get(0) {
+                        cards.push(LinterCard {
+                            id: format!("{}-{}", rule.rule_id, current_line),
+                            level: rule.level.clone(),
+                            line_start: current_line,
+                            line_end: current_line,
+                            message: rule.message.to_string(),
+                            rule_triggered: rule.rule_id.to_string(),
+                            suggested_fix: rule.suggested_fix.map(|s| s.to_string()),
+                        });
                     }
                 }
             }
         }
 
-        issues
+        return cards;
     }
-}
-
-/**
- * IPC Entry Point for the Tauri Frontend.
- * Accepts a raw string buffer from the editor memory and returns identified anomalies.
- */
-#[tauri::command]
-pub fn run_linter_sweep(file_content: String) -> Result<Vec<LinterIssue>, String> {
-    // Instantiate a localized engine for the IPC request. 
-    // In a future performance pass, this could be moved to managed Tauri State to avoid recompiling Regex per-keystroke.
-    let linter = WardenLinter::new();
-    
-    let findings = linter.analyze_buffer(&file_content);
-    
-    Ok(findings)
 }
