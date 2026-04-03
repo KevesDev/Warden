@@ -10,7 +10,11 @@
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
-    "moduleResolution": "Node",
+    
+    // 'bundler' informs TS that Vite will handle file extensions.
+    // This removes the red underline from extensionless imports like './ChatMessage'.
+    "moduleResolution": "bundler",
+    
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
@@ -22,6 +26,7 @@
       "@services/*": ["src/services/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  // Added vite.config.ts to ensure it receives proper TS linting context
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
   "exclude": ["node_modules", "dist", "src-tauri"]
 }
