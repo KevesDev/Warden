@@ -8,7 +8,7 @@ import { THEME } from '@core/constants/theme';
  * Implements a flex-based vertical split-view: AI Chat on top, Heuristic Analysis on the bottom.
  * Decoupled presentation component with independent overflow scrolling contexts.
  */
-export const RightSidebar: React.FC = () => {
+export const RightSideBar: React.FC = () => {
     return (
         <div style={styles.container}>
             {/* Top Half: AI Chat Interface */}

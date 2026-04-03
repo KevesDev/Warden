@@ -4,14 +4,15 @@ import { ErrorBoundary } from './components/error/ErrorBoundary';
 import { WorkspaceLayout } from './components/layout/WorkspaceLayout';
 import { FileExplorer } from './components/sidebar-left/FileExplorer';
 import { EditorWorkspace } from './components/canvas/EditorWorkspace';
-import { RightSidebar } from './components/sidebar-right/RightSideBar';
+import { RightSideBar } from './components/sidebar-right/RightSideBar';
+import { WardenTerminal } from './components/terminal/WardenTerminal';
 
-// Import global styles for Monaco Editor decorations
+// Import global styles for Monaco Editor and Warden UI decorations
 import './styles/warden.css';
 
 /**
- * Root application entry point.
- * Composes the primary layout using completely decoupled UI containers.
+ * Root application entry point for Warden IDE.
+ * Orchestrates the primary layout components and mounts the live Terminal and Heuristic Tools.
  */
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
@@ -19,8 +20,8 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
       <WorkspaceLayout 
         leftSidebar={<FileExplorer />}
         centerCanvas={<EditorWorkspace />}
-        bottomTerminal={<section aria-label="Terminal Output" />} 
-        rightSidebar={<RightSidebar />} 
+        bottomTerminal={<WardenTerminal />} 
+        rightSidebar={<RightSideBar />} 
       />
     </ErrorBoundary>
   </React.StrictMode>
