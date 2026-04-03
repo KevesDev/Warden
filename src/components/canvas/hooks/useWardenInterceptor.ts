@@ -3,23 +3,23 @@ import { SystemLogger, LogLevel } from '@core/utils/systemLogger';
 import { WardenIPC } from '@services/rust-bridge/wardenIpc';
 import { useEditorStore } from '@core/state/editorStore';
 import { useWardenStore } from '@core/state/wardenStore';
+import { ErrorLevel } from '@core/contracts/WardenSchema';
 
 /**
  * Custom hook encapsulating the Warden Heuristic Engine's frontend logic.
- * Manages Monaco decoration caching and triggers the Rust AST/Linter backend.
- * * ARCHITECTURAL DESIGN:
- * Uses 'Ref' escape hatches for activePath and monacoInstance to bridge
- * React's declarative state with Monaco's imperative listeners. This prevents
- * stale closures and avoids expensive listener re-binding on every render.
+ * Manages Monaco decoration caching, streams, and translates backend analysis 
+ * into native visual editor markers (squiggly lines).
  */
 export const useWardenInterceptor = () => {
     const { activeFilePath } = useEditorStore();
-    const { isStreaming, streamingBuffer, latestChunk } = useWardenStore();
+    
+    // We now subscribe to activeAnalysis to drive visual editor feedback
+    const { isStreaming, streamingBuffer, latestChunk, activeAnalysis } = useWardenStore();
     
     const activePathRef = useRef<string | null>(null);
     activePathRef.current = activeFilePath;
 
-    // Stream Context Lock: Prevents analysis misattribution if tabs change mid-stream
+    // Stream Context Lock
     const streamContextPathRef = useRef<string | null>(null);
 
     const editorInstanceRef = useRef<any>(null);
@@ -29,10 +29,6 @@ export const useWardenInterceptor = () => {
     // Decoration Persistence Cache: Maps filePath -> Range[]
     const fileDecorationsRef = useRef<Map<string, any[]>>(new Map());
 
-    /**
-     * Determines if a file extension warrants heuristic analysis.
-     * Prevents false-positives in documentation or non-code files.
-     */
     const isAnalysable = (path: string | null): boolean => {
         if (!path) return false;
         const ext = path.split('.').pop()?.toLowerCase();
@@ -40,8 +36,55 @@ export const useWardenInterceptor = () => {
     };
 
     /**
-     * EFFECT: Handles incoming AI code streams from the MockService.
-     * Appends tokens to the editor buffer via the native Edits API.
+     * VISUAL LINKING EFFECT: Applies native editor markers based on Rust analysis.
+     * Uses Monaco's setModelMarkers to draw squiggly lines without blocking React's thread.
+     */
+    useEffect(() => {
+        const editor = editorInstanceRef.current;
+        const monaco = monacoInstanceRef.current;
+
+        if (!editor || !monaco) return;
+
+        try {
+            const model = editor.getModel();
+            if (!model) return;
+
+            // Clear markers if analysis is null, clean, or target path does not match active view
+            if (!activeAnalysis || activeAnalysis.cards.length === 0 || activeAnalysis.target_file_path !== activePathRef.current) {
+                monaco.editor.setModelMarkers(model, 'warden-heuristics', []);
+                return;
+            }
+
+            // Map Warden LinterCards to standard IDE MarkerData
+            const markers = activeAnalysis.cards.map(card => {
+                let severity = monaco.MarkerSeverity.Info;
+                if (card.level === ErrorLevel.Critical) severity = monaco.MarkerSeverity.Error;
+                else if (card.level === ErrorLevel.Warning) severity = monaco.MarkerSeverity.Warning;
+
+                // Format the hover tooltip to include the rule and suggested fix
+                const message = `[Warden: ${card.rule_triggered}]\n${card.message}${card.suggested_fix ? `\n\nSuggested Fix: ${card.suggested_fix}` : ''}`;
+
+                return {
+                    severity,
+                    startLineNumber: card.line_start,
+                    startColumn: 1, // Draw squiggly from the start of the line
+                    endLineNumber: card.line_end,
+                    endColumn: model.getLineMaxColumn(card.line_end), // to the absolute end of the line
+                    message,
+                };
+            });
+
+            // Apply markers to the specific model layer
+            monaco.editor.setModelMarkers(model, 'warden-heuristics', markers);
+            SystemLogger.log(LogLevel.INFO, 'WardenInterceptor', `Applied ${markers.length} visual markers to editor.`);
+
+        } catch (err) {
+            SystemLogger.log(LogLevel.ERROR, 'WardenInterceptor', 'Failed to apply visual markers.', err);
+        }
+    }, [activeAnalysis]);
+
+    /**
+     * STREAMING EFFECT: Handles incoming AI code tokens.
      */
     useEffect(() => {
         const editor = editorInstanceRef.current;
@@ -49,7 +92,6 @@ export const useWardenInterceptor = () => {
 
         if (!editor || !monaco || !isStreaming || !latestChunk) return;
 
-        // Lock the context path on the first streaming chunk
         if (!streamContextPathRef.current) {
             streamContextPathRef.current = activeFilePath;
         }
@@ -60,7 +102,6 @@ export const useWardenInterceptor = () => {
             const column = model.getLineMaxColumn(lineCount);
             const range = new monaco.Range(lineCount, column, lineCount, column);
 
-            // executeEdits preserves undo/redo history and marker stability
             editor.executeEdits('warden-stream', [{
                 range,
                 text: latestChunk,
@@ -74,8 +115,7 @@ export const useWardenInterceptor = () => {
     }, [latestChunk, isStreaming, activeFilePath]);
 
     /**
-     * EFFECT: Finalizes analysis when a stream completes.
-     * Analyzes against the locked context path rather than the potentially changed active tab.
+     * FINALIZATION EFFECT: Dispatches analysis request when a stream completes.
      */
     useEffect(() => {
         const targetPath = streamContextPathRef.current;
@@ -88,7 +128,6 @@ export const useWardenInterceptor = () => {
                 WardenIPC.analyzeSelection(targetPath, editor.getValue(), streamingBuffer, 1);
             }
 
-            // Release context lock for the next stream
             streamContextPathRef.current = null;
         }
     }, [isStreaming, streamingBuffer]);
@@ -144,7 +183,7 @@ export const useWardenInterceptor = () => {
             }
         });
 
-        // 3. EVENT LISTENER: Clean up decorations if code is deleted
+        // 3. EVENT LISTENER: Clean up visual decorations if code is deleted
         editor.onDidChangeModelContent(() => {
             try {
                 const ranges = decorationsCollectionRef.current.getRanges();
@@ -178,4 +217,4 @@ export const useWardenInterceptor = () => {
     }, []);
 
     return { bindWardenHeuristics };
-}
+};

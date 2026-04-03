@@ -8,7 +8,7 @@ use std::collections::HashSet;
  * Flags external dependencies that are invoked by the LLM but not imported.
  */
 pub fn scan_for_hallucinations(
-    file_path: &str, 
+    _file_path: &str, // Prefixed with underscore to explicitly satisfy Rust's unused variable compiler warnings
     full_file_buffer: &str, 
     target_chunk: &str, 
     start_line_offset: usize
