@@ -15,8 +15,12 @@ pub struct EntropyScanner {
 impl EntropyScanner {
     pub fn new() -> Self {
         Self {
-            // Isolates text enclosed in single quotes, double quotes, or backticks
-            string_extractor: Regex::new(r#"(['"`])(.*?)\1"#).expect("Failed to compile string extraction regex"),
+            // Refactored to explicitly avoid backreferences (\1).
+            // Rust's regex engine guarantees linear execution time to prevent ReDoS attacks,
+            // which requires strict finite automaton patterns without backtracking.
+            string_extractor: Regex::new(
+                r#""([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|`([^`\\]*(?:\\.[^`\\]*)*)`"#
+            ).expect("Failed to compile string extraction regex"),
         }
     }
 
@@ -55,9 +59,13 @@ impl EntropyScanner {
             let current_line = start_line + chunk_line_index;
 
             for capture in self.string_extractor.captures_iter(line) {
-                // capture.get(2) contains the actual text inside the quotes
-                if let Some(matched_string) = capture.get(2) {
-                    let text = matched_string.as_str();
+                // Determine which specific quote style matched and extract its inner group (1 = Double, 2 = Single, 3 = Backtick)
+                let matched_string = capture.get(1)
+                    .or_else(|| capture.get(2))
+                    .or_else(|| capture.get(3));
+                
+                if let Some(m) = matched_string {
+                    let text = m.as_str();
                     
                     // Filter: We only care about strings long enough to be an actual token/key.
                     // A 4-character string might have high entropy but isn't a security risk.
@@ -67,7 +75,7 @@ impl EntropyScanner {
                         // Industry standard threshold for Base64/Hex cryptographic secrets is ~4.5
                         if entropy > 4.5 {
                             cards.push(LinterCard {
-                                id: format!("WDN-ENTROPY-{}-{}", current_line, matched_string.start()),
+                                id: format!("WDN-ENTROPY-{}-{}", current_line, m.start()),
                                 level: ErrorLevel::Critical,
                                 line_start: current_line,
                                 line_end: current_line,

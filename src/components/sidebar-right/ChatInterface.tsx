@@ -1,16 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useChatStore } from '@core/state/chatStore';
 import { useWardenStore } from '@core/state/wardenStore';
-import { MockService } from '@services/mock-engine/MockService';
+import { LlmOrchestrator } from '@services/llm-api/LlmOrchestrator';
 import { SystemLogger, LogLevel } from '@core/utils/systemLogger';
 import { THEME } from '@core/constants/theme';
 import { ChatMessage } from './ChatMessage';
 
 /**
  * Main AI Chat Interface for the right sidebar.
- * Handles user input, delegates LLM generation to the MockService,
- * and provides robust abort controls to prevent endless loops.
- * Strictly adheres to the centralized THEME constants for all styling.
+ * Handles user input and delegates LLM generation to the LlmOrchestrator.
+ * Strictly decoupled from specific API or Mock engine implementations.
  */
 export const ChatInterface: React.FC = () => {
     const [inputValue, setInputValue] = useState('');
@@ -26,7 +25,7 @@ export const ChatInterface: React.FC = () => {
     }, [messages]);
 
     /**
-     * Handles user submission, appends the message, and triggers the simulated AI.
+     * Handles user submission, appends the message, and delegates to the Orchestrator.
      */
     const handleSend = async () => {
         if (!inputValue.trim() || isStreaming) return;
@@ -41,21 +40,20 @@ export const ChatInterface: React.FC = () => {
             // 2. Pre-add the Assistant's empty response shell
             addMessage('assistant', 'Generating code injection...');
 
-            // 3. Trigger the headless AI stream. 
-            await MockService.getInstance().streamCode('placeholder', 30);
+            // 3. Trigger the agnostic orchestrator
+            await LlmOrchestrator.streamResponse(currentInput);
             
         } catch (error) {
-            SystemLogger.log(LogLevel.ERROR, 'ChatInterface', 'Failed to dispatch AI message.', error);
+            SystemLogger.log(LogLevel.ERROR, 'ChatInterface', 'Failed to dispatch AI message via Orchestrator.', error);
         }
     };
 
     /**
-     * Robust interruption mechanism. Halts the MockService immediately to 
-     * stop editor injection and generation loops.
+     * Robust interruption mechanism. Delegates the abort command to the Orchestrator.
      */
     const handleStop = () => {
         try {
-            MockService.getInstance().abortStream();
+            LlmOrchestrator.abortStream();
         } catch (error) {
             SystemLogger.log(LogLevel.ERROR, 'ChatInterface', 'Failed to abort stream.', error);
         }
