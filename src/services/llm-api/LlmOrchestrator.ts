@@ -1,4 +1,5 @@
 import { MockService } from '@services/mock-engine/MockService';
+import { useWardenStore } from '@core/state/wardenStore';
 import { SystemLogger, LogLevel } from '@core/utils/systemLogger';
 
 /**
@@ -13,12 +14,26 @@ export class LlmOrchestrator {
 
     /**
      * Accepts a user prompt and routes it to the appropriate engine.
+     * Consumes the asynchronous stream and pipes it securely to the global UI store.
      */
     public static async streamResponse(prompt: string): Promise<void> {
         SystemLogger.log(LogLevel.INFO, 'LlmOrchestrator', `Routing generation request. Mock Mode: ${this.useMockEngine}`);
 
+        const store = useWardenStore.getState();
+
         if (this.useMockEngine) {
-            await MockService.streamRandomCode(30);
+            store.startStream();
+            try {
+                // Consume the erratic token stream from the headless mock engine
+                const stream = MockService.generateStream(prompt);
+                for await (const chunk of stream) {
+                    store.appendStreamChunk(chunk);
+                }
+            } catch (error) {
+                SystemLogger.log(LogLevel.ERROR, 'LlmOrchestrator', 'Mock stream execution failed.', error);
+            } finally {
+                store.endStream();
+            }
         } else {
             // Production integration point for Claude/GPT API pipelines
             SystemLogger.log(LogLevel.WARN, 'LlmOrchestrator', 'Production LLM integration pending deployment.');
