@@ -6,10 +6,12 @@ import { FileExplorer } from './components/sidebar-left/FileExplorer';
 import { EditorWorkspace } from './components/canvas/EditorWorkspace';
 import { RightSidebar } from './components/sidebar-right/RightSideBar';
 
+// Import global styles for Monaco Editor decorations
+import './styles/warden.css';
+
 /**
  * Root application entry point.
  * Composes the primary layout using completely decoupled UI containers.
- * The rightSidebar prop now correctly mounts the finalized split-view tools.
  */
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>

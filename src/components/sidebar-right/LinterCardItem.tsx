@@ -1,6 +1,9 @@
 import React from 'react';
 import { LinterCard, ErrorLevel } from '@core/contracts/WardenSchema';
 import { THEME } from '@core/constants/theme';
+import { useWardenStore } from '@core/state/wardenStore';
+import { useEditorStore } from '@core/state/editorStore';
+import { SystemLogger, LogLevel } from '@core/utils/systemLogger';
 
 interface LinterCardItemProps {
     card: LinterCard;
@@ -8,10 +11,15 @@ interface LinterCardItemProps {
 
 /**
  * Decoupled presentation component for a single Heuristic Analysis result.
- * Displays severity, line numbers, and the specific rule triggered by the Rust backend.
+ * Now acts as an interactive navigational tool to focus the editor on the issue,
+ * including seamless cross-tab switching if the issue is in a background file.
  */
 export const LinterCardItem: React.FC<LinterCardItemProps> = ({ card }) => {
-    // Map the severity to our centralized retro aesthetic theme
+    const { focusIssue, focusedIssueId, activeAnalysis } = useWardenStore();
+    const { activeFilePath, setActiveFile } = useEditorStore();
+    
+    const isFocused = focusedIssueId === card.id;
+
     const getBorderColor = (level: ErrorLevel) => {
         switch (level) {
             case ErrorLevel.Critical: return THEME.neonCrimson;
@@ -21,10 +29,35 @@ export const LinterCardItem: React.FC<LinterCardItemProps> = ({ card }) => {
         }
     };
 
+    /**
+     * Handles Kanban card clicks. Ensures the correct file is open 
+     * before instructing the interceptor to snap the camera.
+     */
+    const handleNavigationClick = () => {
+        try {
+            if (activeAnalysis && activeAnalysis.target_file_path !== activeFilePath) {
+                SystemLogger.log(LogLevel.INFO, 'LinterCardItem', `Switching active tab to: ${activeAnalysis.target_file_path}`);
+                setActiveFile(activeAnalysis.target_file_path);
+            }
+            focusIssue(card.id);
+        } catch (error) {
+            SystemLogger.log(LogLevel.ERROR, 'LinterCardItem', 'Failed to navigate to issue.', error);
+        }
+    };
+
     const borderColor = getBorderColor(card.level);
 
     return (
-        <div style={{ ...styles.cardContainer, borderLeft: `3px solid ${borderColor}` }}>
+        <div 
+            onClick={handleNavigationClick}
+            style={{ 
+                ...styles.cardContainer, 
+                borderLeft: `3px solid ${borderColor}`,
+                // Apply a subtle visual lift if this is the currently focused issue
+                backgroundColor: isFocused ? '#1D1429' : THEME.consoleDark,
+                borderColor: isFocused ? THEME.cyberCyan : THEME.midnightPurple
+            }}
+        >
             <div style={styles.header}>
                 <span style={{ ...styles.severityBadge, color: borderColor }}>
                     {card.level}
@@ -62,6 +95,8 @@ const styles = {
         display: 'flex',
         flexDirection: 'column' as const,
         gap: '8px',
+        cursor: 'pointer', // Indicates interactivity to the user
+        transition: 'all 0.2s ease',
     },
     header: {
         display: 'flex',
@@ -90,14 +125,13 @@ const styles = {
         fontSize: '13px',
         color: THEME.textPrimary,
         lineHeight: '1.4',
-        // Ensure long code snippets in messages wrap gracefully
         whiteSpace: 'pre-wrap' as const,
         wordBreak: 'break-word' as const,
     },
     suggestionBox: {
         marginTop: '4px',
         padding: '8px',
-        backgroundColor: 'rgba(5, 217, 232, 0.05)', // Cyber Cyan tint
+        backgroundColor: 'rgba(5, 217, 232, 0.05)', 
         borderLeft: `2px solid ${THEME.cyberCyan}`,
         borderRadius: '2px',
     },

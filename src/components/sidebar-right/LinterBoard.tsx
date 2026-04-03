@@ -5,11 +5,11 @@ import { LinterCardItem } from './LinterCardItem';
 
 /**
  * Main container for the Heuristic Analysis UI.
- * Subscribes to the global warden store and dynamically renders
- * technical debt flags caught by the Rust backend.
+ * Subscribes to the global warden store and dynamically renders technical debt flags.
+ * Now includes file targeting transparency and manual dismissal controls.
  */
 export const LinterBoard: React.FC = () => {
-    const { activeAnalysis, isAnalyzing } = useWardenStore();
+    const { activeAnalysis, isAnalyzing, clearAnalysis } = useWardenStore();
 
     if (isAnalyzing) {
         return (
@@ -36,15 +36,24 @@ export const LinterBoard: React.FC = () => {
                 <span style={styles.timeText}>
                     Analyzed in {activeAnalysis.execution_time_ms}ms
                 </span>
+                <button onClick={clearAnalysis} style={styles.dismissButton}>DISMISS</button>
             </div>
         );
     }
 
+    // Extract filename from the full path for a cleaner header
+    const fileName = activeAnalysis.target_file_path.split('\\').pop()?.split('/').pop() || 'Unknown File';
+
     return (
         <div style={styles.boardContainer}>
             <div style={styles.statsHeader}>
-                <span>{activeAnalysis.cards.length} Issues Found</span>
-                <span>{activeAnalysis.execution_time_ms}ms</span>
+                <div style={styles.headerLeft}>
+                    <span style={styles.fileName}>{fileName}</span>
+                    <span style={styles.issueCount}>{activeAnalysis.cards.length} Issues</span>
+                </div>
+                <button onClick={clearAnalysis} style={styles.dismissButton}>
+                    DISMISS
+                </button>
             </div>
             
             <div style={styles.cardList}>
@@ -65,6 +74,7 @@ const styles = {
         justifyContent: 'center',
         padding: '16px',
         backgroundColor: THEME.deepVoid,
+        gap: '8px',
     },
     statusText: {
         color: THEME.textSecondary,
@@ -76,7 +86,6 @@ const styles = {
     timeText: {
         color: THEME.textSecondary,
         fontSize: '10px',
-        marginTop: '8px',
         opacity: 0.3,
         fontFamily: "'Fira Code', monospace",
     },
@@ -90,12 +99,35 @@ const styles = {
     statsHeader: {
         display: 'flex',
         justifyContent: 'space-between',
+        alignItems: 'center',
         padding: '8px 16px',
         backgroundColor: THEME.panelHeader,
         borderBottom: `1px solid ${THEME.midnightPurple}`,
+    },
+    headerLeft: {
+        display: 'flex',
+        flexDirection: 'column' as const,
+        gap: '2px',
+    },
+    fileName: {
+        color: THEME.textPrimary,
         fontSize: '11px',
-        color: THEME.textSecondary,
+        fontWeight: 'bold',
+    },
+    issueCount: {
+        fontSize: '10px',
+        color: THEME.neonCrimson,
         fontFamily: "'Fira Code', monospace",
+    },
+    dismissButton: {
+        backgroundColor: 'transparent',
+        border: `1px solid ${THEME.midnightPurple}`,
+        color: THEME.textSecondary,
+        fontSize: '10px',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        fontWeight: 'bold',
     },
     cardList: {
         flex: 1,

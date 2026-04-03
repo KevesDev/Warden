@@ -7,32 +7,32 @@ import { SystemLogger, LogLevel } from '@core/utils/systemLogger';
  * Manages both the analysis results and the active AI streaming buffer.
  */
 interface WardenState {
-    // Analysis results
     activeAnalysis: WardenAnalysisResult | null;
     isAnalyzing: boolean;
     
-    // AI Streaming State (Sprint 4 Phase 3)
-    isStreaming: boolean;
-    streamingBuffer: string; // The "accumulated" text from the current stream
-    latestChunk: string | null; // The most recent token received
+    // UI Interaction State
+    focusedIssueId: string | null;
     
-    // Actions
+    isStreaming: boolean;
+    streamingBuffer: string; 
+    latestChunk: string | null; 
+    
     setAnalyzingState: (isAnalyzing: boolean) => void;
     setAnalysisResult: (result: WardenAnalysisResult) => void;
     clearAnalysis: () => void;
+    focusIssue: (id: string | null) => void;
     
-    // Streaming Actions
     startStream: () => void;
     appendStreamChunk: (chunk: string) => void;
     endStream: () => void;
     
-    // Quick getters
     getCardsForFile: (filePath: string) => LinterCard[];
 }
 
 export const useWardenStore = create<WardenState>((set, get) => ({
     activeAnalysis: null,
     isAnalyzing: false,
+    focusedIssueId: null,
     isStreaming: false,
     streamingBuffer: '',
     latestChunk: null,
@@ -47,16 +47,21 @@ export const useWardenStore = create<WardenState>((set, get) => ({
             'WardenStore', 
             `Analysis completed for ${result.target_file_path}. Found ${result.cards.length} issues.`
         );
-        set({ activeAnalysis: result, isAnalyzing: false });
+        set({ activeAnalysis: result, isAnalyzing: false, focusedIssueId: null });
     },
 
     clearAnalysis: () => {
-        set({ activeAnalysis: null, isAnalyzing: false });
+        set({ activeAnalysis: null, isAnalyzing: false, focusedIssueId: null });
+        SystemLogger.log(LogLevel.INFO, 'WardenStore', 'Analysis state cleared.');
+    },
+
+    focusIssue: (id: string | null) => {
+        set({ focusedIssueId: id });
     },
 
     startStream: () => {
         SystemLogger.log(LogLevel.INFO, 'WardenStore', 'AI Streaming started.');
-        set({ isStreaming: true, streamingBuffer: '', latestChunk: null });
+        set({ isStreaming: true, streamingBuffer: '', latestChunk: null, focusedIssueId: null });
     },
 
     appendStreamChunk: (chunk: string) => {

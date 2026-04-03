@@ -1,0 +1,10 @@
+/**
+ * Warden IDE Global Styles
+ * Dedicated stylesheet for Monaco Editor decorations and custom UI overrides.
+ * Strictly adheres to the THEME constants (retroPlasma).
+ */
+
+.warden-paste-highlight {
+    background-color: rgba(242, 89, 18, 0.15) !important;
+    border-left: 3px solid #F25912 !important;
+}
