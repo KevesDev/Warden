@@ -9,10 +9,12 @@ edition = "2021"
 tauri-build = { version = "1", features = [] }
 
 [dependencies]
-tauri = { version = "1", features = [ "shell-all", "window-all", "fs-all", "dialog-all"] }
+tauri = { version = "1", features = [ "shell-open", "shell-execute", "shell-sidecar", "window-all", "fs-all", "dialog-all"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1.10"
+# reqwest handles the internal network request to the local llama-server
+reqwest = { version = "0.11", features = ["json"] }
 
 # Pseudoterminal integration for native OS shell access
 portable-pty = "0.8.1"

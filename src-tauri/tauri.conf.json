@@ -3,27 +3,31 @@
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
     "devPath": "http://localhost:1420",
-    "distDir": "../dist"
+    "distDir": "../dist",
+    "withGlobalTauri": false
   },
   "package": {
-    "productName": "Warden IDE",
+    "productName": "warden-ide",
     "version": "0.1.0"
   },
   "tauri": {
     "allowlist": {
       "all": false,
-      "dialog": {
-        "all": true
+      "shell": {
+        "all": false,
+        "open": true,
+        "sidecar": true,
+        "execute": true,
+        "sidecarArgs": true
       },
       "fs": {
         "all": true,
         "scope": ["**"]
       },
-      "shell": {
-        "all": true,
-        "open": true
-      },
       "window": {
+        "all": true
+      },
+      "dialog": {
         "all": true
       }
     },
@@ -32,7 +36,17 @@
       "targets": "all",
       "identifier": "com.warden.ide",
       "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
         "icons/icon.ico"
+      ],
+      "externalBin": [
+        "binaries/llama-server"
+      ],
+      "resources": [
+        "resources/Phi-4-mini-instruct-Q6_K.gguf"
       ]
     },
     "security": {
@@ -41,12 +55,10 @@
     "windows": [
       {
         "fullscreen": false,
-        "height": 800,
+        "height": 600,
         "resizable": true,
-        "title": "Warden IDE",
-        "width": 1200,
-        "minWidth": 800,
-        "minHeight": 600,
+        "title": "warden-ide",
+        "width": 800,
         "decorations": false
       }
     ]
