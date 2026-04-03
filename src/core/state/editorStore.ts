@@ -6,17 +6,20 @@ import { FileOpsIPC } from '@services/rust-bridge/fileOpsIpc';
 
 /**
  * Global state manager for the Warden IDE workspace.
- * Handles the workspace root, multi-file buffers, and UI visibility.
- * Strictly adheres to the 'Zero Assumption' rule by defining all utilized actions.
+ * Manages the file tree, active buffers, and UI visibility states.
+ * * ARCHITECTURAL DESIGN:
+ * activeWorkspacePath is tracked as a first-class property to allow 
+ * platform-agnostic services (like the Terminal) to reactively synchronize 
+ * with the native filesystem context.
  */
 interface EditorState extends UiVisibilityState {
     rootNode: FileNode | null;
+    activeWorkspacePath: string | null;
     activeFilePath: string | null;
     openFiles: string[];
-    // Memory buffers for open files: Map<filePath, content>
     fileBuffers: Map<string, string>;
-    // Set of file paths that have unsaved changes
     dirtyFiles: Set<string>;
+    statusMessage: string | null;
 
     // Actions
     setWorkspace: (node: FileNode | null) => void;
@@ -40,6 +43,7 @@ interface EditorState extends UiVisibilityState {
 
 export const useEditorStore = create<EditorState>((set, get) => ({
     rootNode: null,
+    activeWorkspacePath: null,
     activeFilePath: null,
     openFiles: [],
     fileBuffers: new Map(),
@@ -49,13 +53,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     statusMessage: null,
 
     /**
-     * Initializes or refreshes the entire workspace root.
-     * Clears existing tabs and buffers to prevent stale data across different projects.
+     * Updates the workspace root and synchronizes the active path.
+     * Triggers re-initialization of context-aware components (Terminal, Warden Engine).
      */
     setWorkspace: (node) => {
-        SystemLogger.log(LogLevel.INFO, 'EditorStore', 'Workspace refreshed.');
+        SystemLogger.log(LogLevel.INFO, 'EditorStore', `Workspace context updated to: ${node?.path || 'None'}`);
         set({ 
             rootNode: node,
+            activeWorkspacePath: node?.path || null,
             openFiles: [],
             fileBuffers: new Map(),
             dirtyFiles: new Set(),
@@ -65,20 +70,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     setActiveFile: (filePath) => set({ activeFilePath: filePath }),
 
+    /**
+     * Updates the IDE status bar with a transient message.
+     */
     setStatus: (message) => {
         set({ statusMessage: message });
         if (message) {
-            // Transient messages auto-clear after 3 seconds
             setTimeout(() => {
                 if (get().statusMessage === message) set({ statusMessage: null });
             }, 3000);
         }
     },
 
-    /**
-     * Adds a file to the tab list. 
-     * Buffer hydration is handled lazily by the MonacoCanvas component.
-     */
     openTab: (filePath) => {
         const { openFiles } = get();
         if (!openFiles.includes(filePath)) {
@@ -91,10 +94,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
     },
 
-    /**
-     * Fills the buffer with content from the disk.
-     * Clears the dirty flag as the buffer now matches the disk state.
-     */
     hydrateBuffer: (filePath, content) => {
         const { fileBuffers, dirtyFiles } = get();
         fileBuffers.set(filePath, content);
@@ -105,10 +104,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         });
     },
 
-    /**
-     * Updates the in-memory buffer during user input.
-     * Flags the file as 'dirty' to trigger unsaved changes indicators.
-     */
     updateBuffer: (filePath, content) => {
         const { fileBuffers, dirtyFiles } = get();
         fileBuffers.set(filePath, content);
@@ -119,13 +114,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         });
     },
 
-    /**
-     * Removes a tab and clears its memory buffer.
-     */
     closeTab: (filePath) => {
         const { openFiles, fileBuffers, dirtyFiles, activeFilePath } = get();
         const newFiles = openFiles.filter(f => f !== filePath);
-        
         fileBuffers.delete(filePath);
         dirtyFiles.delete(filePath);
         
@@ -145,9 +136,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     toggleTerminal: () => set((state) => ({ isTerminalVisible: !state.isTerminalVisible })),
     toggleWarden: () => set((state) => ({ isWardenVisible: !state.isWardenVisible })),
 
-    /**
-     * Writes the current buffer of the active file to the native disk.
-     */
     saveActiveFile: async () => {
         const { activeFilePath, fileBuffers, hydrateBuffer, setStatus } = get();
         if (!activeFilePath) return;
@@ -158,46 +146,31 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         try {
             const res = await FileOpsIPC.writeFile(activeFilePath, content);
             if (res.success) {
-                // Buffer now matches disk
                 hydrateBuffer(activeFilePath, content);
                 setStatus('File saved.');
             }
         } catch (e) {
-            SystemLogger.log(LogLevel.ERROR, 'EditorStore', `Save failed: ${activeFilePath}`, e);
+            SystemLogger.log(LogLevel.ERROR, 'EditorStore', `Save operation failed: ${activeFilePath}`, e);
             setStatus('Save failed.');
         }
     },
 
-    /**
-     * Bulk-saves all dirty buffers to the native disk.
-     */
     saveAll: async () => {
         const { dirtyFiles, fileBuffers, hydrateBuffer, setStatus } = get();
-        if (dirtyFiles.size === 0) {
-            setStatus('Nothing to save.');
-            return;
-        }
+        if (dirtyFiles.size === 0) return;
 
         const pathsToSave = Array.from(dirtyFiles);
-        let successCount = 0;
-
-        setStatus(`Saving ${pathsToSave.length} files...`);
-
         for (const path of pathsToSave) {
             const content = fileBuffers.get(path);
             if (content !== undefined) {
                 try {
                     const res = await FileOpsIPC.writeFile(path, content);
-                    if (res.success) {
-                        hydrateBuffer(path, content);
-                        successCount++;
-                    }
+                    if (res.success) hydrateBuffer(path, content);
                 } catch (e) {
-                    SystemLogger.log(LogLevel.ERROR, 'EditorStore', `SaveAll failed for ${path}`, e);
+                    SystemLogger.log(LogLevel.ERROR, 'EditorStore', `Bulk save failed for: ${path}`, e);
                 }
             }
         }
-
-        setStatus(`Saved ${successCount} files.`);
+        setStatus('All changes saved.');
     }
 }));
